@@ -11,6 +11,10 @@ One-off overrides on top of the profile:
 
 On failure: a screenshot of every open page and the Playwright trace are
 saved under reports/ and attached to the Allure report.
+
+Data-driven: a test that takes a ``search_case`` argument runs once per row
+of the profile's data file (``data.search_cases``, default
+data/search_cases.yaml). Adding a row adds a test case.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ import pytest
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, expect, sync_playwright
 
 from core.config import Settings, load_settings
+from core.data_loader import load_search_cases
 from core.logger import configure_logging, get_logger
 from utils.attachments import attach_screenshot, attach_trace
 from utils.files import safe_filename, timestamp
@@ -28,10 +33,24 @@ from utils.files import safe_filename, timestamp
 log = get_logger("conftest")
 
 phase_reports_key = pytest.StashKey[dict[str, pytest.TestReport]]()
+settings_key = pytest.StashKey[Settings]()
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption("--env", action="store", default=None, help="Settings profile from config/ (overrides $ENV).")
+
+
+def _load_settings_once(config: pytest.Config) -> Settings:
+    # Needed both at collection (data file path) and by the fixtures: load once per run.
+    if settings_key not in config.stash:
+        config.stash[settings_key] = load_settings(config.getoption("--env"))
+    return config.stash[settings_key]
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    if "search_case" in metafunc.fixturenames:
+        cases = load_search_cases(_load_settings_once(metafunc.config).data.search_cases)
+        metafunc.parametrize("search_case", cases, ids=[case.id for case in cases])
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
@@ -48,16 +67,17 @@ def _test_failed(node: pytest.Item) -> bool:
 
 @pytest.fixture(scope="session")
 def settings(pytestconfig: pytest.Config) -> Settings:
-    settings = load_settings(pytestconfig.getoption("--env"))
+    settings = _load_settings_once(pytestconfig)
     log_file = configure_logging(settings.artifacts.logs_dir, settings.log_level)
     expect.set_options(timeout=settings.timeouts.expect_ms)
     log.info(
-        "Profile '%s': %s | %s headless=%s slow_mo=%sms | log file %s",
+        "Profile '%s': %s | %s headless=%s slow_mo=%sms | %s | log file %s",
         settings.env,
         settings.base_url,
         settings.browser.name,
         settings.browser.headless,
         settings.browser.slow_mo_ms,
+        "guest" if settings.auth.guest else f"login as {settings.auth.username}",
         log_file,
     )
     return settings

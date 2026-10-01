@@ -1,0 +1,17 @@
+# Search scenarios. Every row becomes its own test case - no code changes needed.
+#
+#   query            (required) text typed into the eBay search box
+#   max_price        (required) only items priced <= this are collected
+#   limit            (optional, default 5) how many item URLs to collect at most
+#   budget_per_item  (optional, default max_price) cart check: total <= budget_per_item * items added
+#   id               (optional) test id shown in reports; derived from query + max_price if omitted
+cases:
+  - id: shoes-under-220
+    query: shoes
+    max_price: 220
+    limit: 5
+
+  - id: usb-c-cable-under-15
+    query: usb c cable
+    max_price: 15
+    limit: 3

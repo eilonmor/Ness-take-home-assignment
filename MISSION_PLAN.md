@@ -91,10 +91,11 @@ Login is required, but a **guest / stub** login is allowed (document it as a lim
 
 > ✅ **Milestone 1:** profile switchable via `ENV=ci pytest`; a failing test produces a screenshot and trace in the report.
 
-### Stage 2 — Data-Driven Test Data (~15 min)
-- [ ] `data/search_cases.yaml` with rows like `{query: shoes, max_price: 220, limit: 5}`.
-- [ ] Credentials / guest flag from `.env` (never committed; provide `.env.example`).
-- [ ] Parametrize tests from the data file.
+### Stage 2 — Data-Driven Test Data (~15 min) ✅ DONE
+- [x] `data/search_cases.yaml` with rows like `{query: shoes, max_price: 220, limit: 5}`. Loaded by `core/data_loader.py` into validated `SearchCase` rows (optional `budget_per_item`, `id`).
+- [x] Credentials / guest flag from `.env` (never committed; provide `.env.example`). `auth.guest` in the profile, `EBAY_GUEST` / `EBAY_USERNAME` / `EBAY_PASSWORD` from the environment.
+- [x] Parametrize tests from the data file: any test that takes a `search_case` argument runs once per row (`pytest_generate_tests`). Rationale: [docs/DECISIONS.md](docs/DECISIONS.md) ADR-5.
+- Note for Stage 4: in headless mode, a cold deep link to `/sch/...` returns eBay's "Error Page", and a burst of runs triggers "Pardon Our Interruption" (bot challenge) even when headed. Search from the home page and handle/report the challenge page explicitly.
 
 > ✅ **Milestone 2:** adding a row to the data file adds a test case with no code changes.
 

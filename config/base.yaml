@@ -24,3 +24,12 @@ artifacts:
   dir: reports
   trace: retain-on-failure  # on | off | retain-on-failure
   screenshot_on_failure: true
+
+data:
+  search_cases: data/search_cases.yaml  # relative to the project root
+
+# eBay sign-in is behind captcha/bot checks, so runs are guest by default.
+# Real login is opt-in from .env: EBAY_GUEST=false + EBAY_USERNAME / EBAY_PASSWORD.
+# Credentials are never stored in profiles.
+auth:
+  guest: true
