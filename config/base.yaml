@@ -1,0 +1,26 @@
+# Defaults shared by every profile. A profile file (dev.yaml, ci.yaml, ...)
+# overrides only the keys it lists; env vars (BASE_URL, HEADLESS, SLOW_MO)
+# override both.
+base_url: https://www.ebay.com
+locale: en-US
+timezone_id: America/New_York
+currency: USD
+log_level: INFO
+
+browser:
+  name: chromium        # chromium | firefox | webkit
+  headless: true
+  slow_mo_ms: 0
+  viewport:
+    width: 1440
+    height: 900
+
+timeouts:
+  default_ms: 15000     # actions (click, fill, wait_for)
+  navigation_ms: 30000  # goto / reload / back
+  expect_ms: 10000      # expect(...) assertions
+
+artifacts:
+  dir: reports
+  trace: retain-on-failure  # on | off | retain-on-failure
+  screenshot_on_failure: true

@@ -1,0 +1,9 @@
+# CI / pipeline: headless, more patient timeouts for slow shared runners.
+browser:
+  headless: true
+  slow_mo_ms: 0
+
+timeouts:
+  default_ms: 20000
+  navigation_ms: 45000
+  expect_ms: 15000
