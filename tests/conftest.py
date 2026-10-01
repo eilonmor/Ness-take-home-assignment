@@ -95,20 +95,34 @@ def context(browser: Browser, settings: Settings, request: pytest.FixtureRequest
 
     yield context
 
-    failed = _test_failed(request.node)
-    run_id = f"{timestamp()}_{safe_filename(request.node.name)}"
+    # Evidence is best effort: an error here must neither leak the context
+    # nor replace the test's own failure in the report.
+    try:
+        failed = _test_failed(request.node)
+        run_id = f"{timestamp()}_{safe_filename(request.node.name)}"
+        if failed and settings.artifacts.screenshot_on_failure:
+            _save_failure_screenshots(context, settings, run_id)
+        _finish_tracing(context, settings, run_id, failed)
+    except Exception as error:
+        log.warning("Could not collect test evidence: %s", error)
+    finally:
+        context.close()
 
-    if failed and settings.artifacts.screenshot_on_failure:
-        for index, page in enumerate(context.pages):
-            path = settings.artifacts.screenshots_dir / f"{run_id}_failure_{index}.png"
-            try:
-                page.screenshot(path=path, full_page=True)
-            except Exception as error:  # page may already be closed/crashed
-                log.warning("Could not capture failure screenshot: %s", error)
-                continue
+
+def _save_failure_screenshots(context: BrowserContext, settings: Settings, run_id: str) -> None:
+    for index, page in enumerate(context.pages):
+        path = settings.artifacts.screenshots_dir / f"{run_id}_failure_{index}.png"
+        try:
+            page.screenshot(path=path, full_page=True)
             attach_screenshot(path, f"Failure screenshot (page {index})")
-            log.info("Failure screenshot: %s", path)
+        except Exception as error:  # page may already be closed/crashed
+            log.warning("Could not capture failure screenshot of page %d: %s", index, error)
+            continue
+        log.info("Failure screenshot: %s", path)
 
+
+def _finish_tracing(context: BrowserContext, settings: Settings, run_id: str, failed: bool) -> None:
+    trace_mode = settings.artifacts.trace
     if trace_mode == "on" or (trace_mode == "retain-on-failure" and failed):
         trace_path = settings.artifacts.traces_dir / f"{run_id}.zip"
         context.tracing.stop(path=trace_path)
@@ -116,8 +130,6 @@ def context(browser: Browser, settings: Settings, request: pytest.FixtureRequest
         log.info("Trace saved: %s (open with: playwright show-trace %s)", trace_path, trace_path)
     elif trace_mode != "off":
         context.tracing.stop()
-
-    context.close()
 
 
 @pytest.fixture

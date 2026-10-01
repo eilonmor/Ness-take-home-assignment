@@ -24,6 +24,8 @@ BASE_PROFILE = "base"
 DEFAULT_ENV = "dev"
 TRACE_MODES = ("on", "off", "retain-on-failure")
 BROWSERS = ("chromium", "firefox", "webkit")
+TRUE_VALUES = ("1", "true", "yes", "on")
+FALSE_VALUES = ("0", "false", "no", "off")
 
 
 @dataclass(frozen=True)
@@ -77,7 +79,7 @@ class Settings:
 def load_settings(env: str | None = None) -> Settings:
     """Build Settings for ``env`` (falls back to $ENV, then ``dev``)."""
     load_dotenv(PROJECT_ROOT / ".env")
-    env = (env or os.getenv("ENV") or DEFAULT_ENV).strip().lower()
+    env = (env or _env("ENV") or DEFAULT_ENV).strip().lower()
 
     profile_path = PROFILES_DIR / f"{env}.yaml"
     if env == BASE_PROFILE or not profile_path.is_file():
@@ -108,24 +110,43 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 
 def _env_overrides() -> dict[str, Any]:
-    """Quick one-off overrides without editing a profile, e.g. HEADLESS=false."""
+    """Quick one-off overrides without editing a profile, e.g. HEADLESS=false.
+
+    Unset and empty/blank variables (``HEADLESS=``) are ignored, so they never
+    silently override the profile.
+    """
     overrides: dict[str, Any] = {}
     browser: dict[str, Any] = {}
-    if base_url := os.getenv("BASE_URL"):
+    if base_url := _env("BASE_URL"):
         overrides["base_url"] = base_url
-    if browser_name := os.getenv("BROWSER"):
-        browser["name"] = browser_name.strip().lower()
-    if (headless := os.getenv("HEADLESS")) is not None:
-        browser["headless"] = _parse_bool(headless)
-    if (slow_mo := os.getenv("SLOW_MO")) is not None:
+    if browser_name := _env("BROWSER"):
+        browser["name"] = browser_name.lower()
+    if headless := _env("HEADLESS"):
+        try:
+            browser["headless"] = _parse_bool(headless)
+        except ValueError as error:
+            raise ValueError(f"HEADLESS: {error}") from None
+    if slow_mo := _env("SLOW_MO"):
         browser["slow_mo_ms"] = int(slow_mo)
     if browser:
         overrides["browser"] = browser
     return overrides
 
 
+def _env(name: str) -> str | None:
+    """Stripped value of an env var, or None when it is unset or blank."""
+    value = os.getenv(name, "").strip()
+    return value or None
+
+
 def _parse_bool(value: str) -> bool:
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    """Strict bool parsing: a typo like ``tru`` must fail, not mean False."""
+    normalized = value.strip().lower()
+    if normalized in TRUE_VALUES:
+        return True
+    if normalized in FALSE_VALUES:
+        return False
+    raise ValueError(f"Expected a boolean ({'/'.join(TRUE_VALUES)} or {'/'.join(FALSE_VALUES)}), got '{value}'")
 
 
 def _build_settings(env: str, raw: dict[str, Any]) -> Settings:

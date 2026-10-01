@@ -1,5 +1,6 @@
 import pytest
 
+from core import config
 from core.config import PROJECT_ROOT, available_profiles, load_settings
 
 
@@ -7,6 +8,8 @@ from core.config import PROJECT_ROOT, available_profiles, load_settings
 def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in ("ENV", "BASE_URL", "BROWSER", "HEADLESS", "SLOW_MO"):
         monkeypatch.delenv(name, raising=False)
+    # A developer's local .env must not leak into (or out of) these tests.
+    monkeypatch.setattr(config, "load_dotenv", lambda *args, **kwargs: False)
 
 
 def test_dev_profile_overrides_base() -> None:
@@ -45,6 +48,39 @@ def test_env_variables_override_profile(monkeypatch: pytest.MonkeyPatch) -> None
     assert settings.browser.headless is True
     assert settings.browser.slow_mo_ms == 0
     assert settings.base_url == "https://www.ebay.co.uk"
+
+
+@pytest.mark.parametrize("name", ["BASE_URL", "BROWSER", "HEADLESS", "SLOW_MO"])
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_blank_env_variables_do_not_override_profile(
+    monkeypatch: pytest.MonkeyPatch, name: str, blank: str
+) -> None:
+    profile_only = load_settings("ci")
+    monkeypatch.setenv(name, blank)
+
+    assert load_settings("ci") == profile_only
+
+
+@pytest.mark.parametrize(("value", "expected"), [("TRUE", True), ("1", True), ("off", False), (" no ", False)])
+def test_headless_env_variable_accepts_bool_spellings(
+    monkeypatch: pytest.MonkeyPatch, value: str, expected: bool
+) -> None:
+    monkeypatch.setenv("HEADLESS", value)
+
+    assert load_settings("dev").browser.headless is expected
+
+
+def test_headless_env_variable_rejects_typos(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HEADLESS", "tru")
+
+    with pytest.raises(ValueError, match="HEADLESS: Expected a boolean .* got 'tru'"):
+        load_settings("ci")
+
+
+def test_blank_env_variable_falls_back_to_dev(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ENV", "   ")
+
+    assert load_settings().env == "dev"
 
 
 def test_browser_env_variable_overrides_browser_name(monkeypatch: pytest.MonkeyPatch) -> None:
