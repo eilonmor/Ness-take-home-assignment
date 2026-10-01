@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Self
 
@@ -46,6 +47,18 @@ class BasePage:
     def go_back(self) -> None:
         self.log.debug("Navigating back from %s", self.page.url)
         self.page.go_back(wait_until="domcontentloaded")
+
+    def wait_for_navigation(self, arrived: Callable[[str], bool]) -> None:
+        """Wait for a navigation started by a click (search, filter, next page).
+
+        A bot-check redirect also ends the wait, so the run fails with a
+        ``BotChallengeError`` instead of a timeout on the expected URL.
+        """
+        self.page.wait_for_url(
+            lambda url: arrived(url) or bot_challenge_reason("", url) is not None,
+            wait_until="domcontentloaded",
+        )
+        self.ensure_not_blocked()
 
     @property
     def url(self) -> str:

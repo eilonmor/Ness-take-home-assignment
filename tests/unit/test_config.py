@@ -166,3 +166,17 @@ def test_profile_booleans_must_be_real_yaml_booleans(
 
     with pytest.raises(ValueError, match=f"{key} must be true or false"):
         load_settings("broken")
+
+
+def test_search_page_limit_comes_from_profile() -> None:
+    assert load_settings("ci").search.max_pages == 5
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "yes", "'3'"])
+def test_search_page_limit_must_be_a_positive_integer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    shutil.copy(config.PROFILES_DIR / "base.yaml", tmp_path / "base.yaml")
+    (tmp_path / "broken.yaml").write_text(f"search:\n  max_pages: {value}\n", encoding="utf-8")
+    monkeypatch.setattr(config, "PROFILES_DIR", tmp_path)
+
+    with pytest.raises(ValueError, match="search.max_pages must be a positive integer"):
+        load_settings("broken")

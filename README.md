@@ -16,3 +16,12 @@ eBay protects sign-in with captcha and bot checks, so runs start as a **guest by
 - Many runs in a short time are rate-limited even when headed. The run then fails fast with `eBay served a bot check (...)` and a screenshot. Wait a few minutes before retrying.
 
 Design rationale: [docs/DECISIONS.md](docs/DECISIONS.md) ADR-6.
+
+### Search and prices
+- **Currency follows your location.** eBay shows prices in the visitor's currency (e.g. ILS from Israel), whatever the profile's `currency` says. `max_price` in [data/search_cases.yaml](data/search_cases.yaml) is compared in the displayed currency, and a mismatch is logged as a warning.
+- **Item price only.** Shipping is not included in the price check.
+- **What counts as a match:** the highest price on the card must be ≤ `max_price` (the upper bound of a range, the Buy It Now price of an auction). Auction-only listings are skipped because they cannot be added to a cart.
+- **Sponsored listings are kept.** They are real listings that match the query and the price.
+- **Paging is capped** at `search.max_pages` (default 5) to keep runs short and avoid eBay's rate limiting.
+
+Design rationale: [docs/DECISIONS.md](docs/DECISIONS.md) ADR-7.
