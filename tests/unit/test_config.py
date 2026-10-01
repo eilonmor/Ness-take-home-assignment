@@ -1,3 +1,6 @@
+import shutil
+from pathlib import Path
+
 import pytest
 
 from core import config
@@ -6,7 +9,7 @@ from core.config import PROJECT_ROOT, available_profiles, load_settings
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("ENV", "BASE_URL", "BROWSER", "HEADLESS", "SLOW_MO"):
+    for name in ("ENV", "BASE_URL", "BROWSER", "HEADLESS", "SLOW_MO", "EBAY_GUEST", "EBAY_USERNAME", "EBAY_PASSWORD"):
         monkeypatch.delenv(name, raising=False)
     # A developer's local .env must not leak into (or out of) these tests.
     monkeypatch.setattr(config, "load_dotenv", lambda *args, **kwargs: False)
@@ -50,7 +53,7 @@ def test_env_variables_override_profile(monkeypatch: pytest.MonkeyPatch) -> None
     assert settings.base_url == "https://www.ebay.co.uk"
 
 
-@pytest.mark.parametrize("name", ["BASE_URL", "BROWSER", "HEADLESS", "SLOW_MO"])
+@pytest.mark.parametrize("name", ["BASE_URL", "BROWSER", "HEADLESS", "SLOW_MO", "EBAY_GUEST"])
 @pytest.mark.parametrize("blank", ["", "   "])
 def test_blank_env_variables_do_not_override_profile(
     monkeypatch: pytest.MonkeyPatch, name: str, blank: str
@@ -101,3 +104,65 @@ def test_unknown_profile_lists_available_ones() -> None:
         load_settings("staging")
 
     assert "base" not in available_profiles()
+
+
+def test_data_file_path_is_resolved_from_project_root() -> None:
+    assert load_settings("ci").data.search_cases == PROJECT_ROOT / "data" / "search_cases.yaml"
+
+
+def test_guest_login_is_the_default() -> None:
+    auth = load_settings("ci").auth
+
+    assert auth.guest is True
+    assert auth.username is None
+
+
+def test_real_login_reads_credentials_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EBAY_GUEST", "false")
+    monkeypatch.setenv("EBAY_USERNAME", "buyer@example.com")
+    monkeypatch.setenv("EBAY_PASSWORD", "s3cret")
+
+    settings = load_settings("ci")
+
+    assert settings.auth.guest is False
+    assert settings.auth.username == "buyer@example.com"
+    assert settings.auth.password == "s3cret"
+    assert "s3cret" not in repr(settings)
+
+
+@pytest.mark.parametrize("missing", ["EBAY_USERNAME", "EBAY_PASSWORD"])
+def test_real_login_without_credentials_is_rejected(monkeypatch: pytest.MonkeyPatch, missing: str) -> None:
+    monkeypatch.setenv("EBAY_GUEST", "no")
+    monkeypatch.setenv("EBAY_USERNAME", "buyer@example.com")
+    monkeypatch.setenv("EBAY_PASSWORD", "s3cret")
+    monkeypatch.setenv(missing, " ")
+
+    with pytest.raises(ValueError, match="needs EBAY_USERNAME and EBAY_PASSWORD"):
+        load_settings("ci")
+
+
+def test_guest_env_variable_rejects_typos(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EBAY_GUEST", "flase")
+
+    with pytest.raises(ValueError, match="EBAY_GUEST: Expected a boolean"):
+        load_settings("ci")
+
+
+@pytest.mark.parametrize(
+    ("key", "yaml_text"),
+    [
+        ("auth.guest", 'auth:\n  guest: "false"\n'),
+        ("browser.headless", "browser:\n  headless: 0\n"),
+        ("artifacts.screenshot_on_failure", "artifacts:\n  screenshot_on_failure: 'yes'\n"),
+    ],
+)
+def test_profile_booleans_must_be_real_yaml_booleans(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, key: str, yaml_text: str
+) -> None:
+    # A quoted "false" is a truthy string: it must fail, not silently mean True.
+    shutil.copy(config.PROFILES_DIR / "base.yaml", tmp_path / "base.yaml")
+    (tmp_path / "broken.yaml").write_text(yaml_text, encoding="utf-8")
+    monkeypatch.setattr(config, "PROFILES_DIR", tmp_path)
+
+    with pytest.raises(ValueError, match=f"{key} must be true or false"):
+        load_settings("broken")

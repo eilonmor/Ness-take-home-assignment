@@ -88,3 +88,28 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 **Consequences.**
 - ✅ A red test in Allure carries everything needed to debug it. Open the trace with `playwright show-trace <file>.zip`.
 - ❌ Tracing has a small overhead even on passing tests (screenshots + DOM snapshots are recorded, then discarded).
+
+---
+
+## ADR-5 — Test data in YAML, expanded by `pytest_generate_tests`
+
+**Context.** Milestone 2: adding a scenario must not need code changes. The rows also need validating: a typo such as `max_pirce` or `limit: yes` must not quietly turn into a wrong test against a live site.
+
+**Decision.**
+- Scenarios live in [data/search_cases.yaml](../data/search_cases.yaml) under `cases:`. The file path comes from the profile (`data.search_cases`), so a profile can point to a smaller or bigger data set.
+- [core/data_loader.py](../core/data_loader.py) turns each row into a frozen `SearchCase`. It rejects unknown keys, wrong types, non-positive numbers, empty files and duplicate ids, and the error names the file and row number. `.json` files work too (`yaml.safe_load` reads JSON).
+- A `pytest_generate_tests` hook in [tests/conftest.py](../tests/conftest.py) parametrizes **any** test that takes a `search_case` argument, with the row `id` as the test id (e.g. `[shoes-under-220]`).
+- Login: `auth.guest` (default `true`) is set in the profile and can be overridden by `EBAY_GUEST`. `EBAY_USERNAME` / `EBAY_PASSWORD` are read **only** from the environment or `.env` (git-ignored; template in [.env.example](../.env.example)). `EBAY_GUEST=false` without both credentials stops the run at startup. The password is kept out of `repr`, so it never shows up in logs.
+
+**Alternatives.**
+
+| Option | Why not |
+|---|---|
+| `@pytest.mark.parametrize("case", load_cases())` on each test | The file is read at import time, every test repeats the decorator, and the profile (`--env`) is not known yet at import. |
+| Plain dicts instead of a dataclass | No validation or typing; a typo surfaces deep inside a page object. |
+| CSV | Flat only. Optional fields and comments are clumsy. |
+
+**Consequences.**
+- ✅ A new row means a new test case, with its own id in pytest, Allure and the artifact file names.
+- ✅ Bad data fails at collection with a precise message instead of halfway through a browser session.
+- ❌ The settings are now loaded at collection time too, so an invalid profile or `.env` also breaks `pytest --collect-only`. They are loaded once and cached on `config.stash`, so the fixtures reuse the same instance.
