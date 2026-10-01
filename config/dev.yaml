@@ -1,0 +1,6 @@
+# Local development: visible browser, slowed down, verbose logs.
+log_level: DEBUG
+
+browser:
+  headless: false
+  slow_mo_ms: 100

@@ -69,22 +69,25 @@ Login is required, but a **guest / stub** login is allowed (document it as a lim
 - [x] `.gitignore` (venv, `__pycache__`, `reports/`, `allure-results/`, `.env`).
 - [x] Folder skeleton:
   ```
+  config/      # env profiles: base.yaml + dev.yaml / ci.yaml
   core/        # config loader, logger, base classes
   pages/       # page objects (Home, Login, SearchResults, Item, Cart)
   components/  # reusable UI parts (header search bar, variant selector, pagination)
   utils/       # price parser, screenshot/attachment helpers
-  data/        # test data (YAML/JSON) + env profiles
+  data/        # test data (YAML/JSON)
   tests/       # e2e + unit tests
   reports/     # generated reports (gitignored)
   ```
 
 > ✅ **Milestone 0:** `pytest` runs a smoke test that opens ebay.com (headed and headless).
 
-### Stage 1 — Framework Core & Config (~30 min)
-- [ ] `BasePage`: navigation, waits, safe click, element text, screenshot helper.
-- [ ] Logger (console + file).
-- [ ] Config loader: `ENV` variable + profiles (e.g. `dev`, `ci`) → base URL, headless, timeouts, slow-mo, locale/currency.
-- [ ] `conftest.py` fixtures: browser/context/page, tracing on, screenshot on failure, Allure attachments.
+### Stage 1 — Framework Core & Config (~30 min) ✅ DONE
+- [x] `BasePage`: navigation, waits, safe click, element text, screenshot helper.
+- [x] Logger (console + file).
+- [x] Config loader: `ENV` variable + profiles (e.g. `dev`, `ci`) → base URL, headless, timeouts, slow-mo, locale/currency.
+- [x] `conftest.py` fixtures: browser/context/page, tracing on, screenshot on failure, Allure attachments.
+- Note: replaced the `pytest-playwright` plugin with our own fixtures so the profile (not CLI flags) controls the browser. Rationale and trade-offs: [docs/DECISIONS.md](docs/DECISIONS.md).
+- [x] `BROWSER` env var override (alongside `BASE_URL`, `HEADLESS`, `SLOW_MO`).
 
 > ✅ **Milestone 1:** profile switchable via `ENV=ci pytest`; a failing test produces a screenshot and trace in the report.
 
