@@ -1,0 +1,174 @@
+# Ness Take-Home Assignment — Mission Plan
+
+## 1. Goal
+1. Build an **E2E scenario on eBay**: search products → filter by price → add to cart → assert the cart total.
+2. Show a **clean architecture**: Page Object Model, OOP, data-driven.
+
+## 2. Time Box
+- **3–4 net hours** of implementation.
+- **20–30 min** for the walkthrough/demo.
+
+## 3. General Requirements
+| Area | Choice |
+|---|---|
+| Automation | Playwright |
+| Language | Python |
+| Reports | Allure (alternatives: Extent Reports, Report Portal) |
+| Design | Self-developed **POM** |
+| Test data | **Data-driven** from an external file (JSON / CSV / YAML) |
+
+## 4. Grading Criteria
+| Weight | Criterion |
+|---|---|
+| **45%** | Architecture & clean code: POM, OOP, SRP, utils |
+| **35%** | Robustness & smart locators: dynamic content, paging, variant selection, price parser |
+| **15%** | Data-driven: config, ENV, profiles |
+| **15%** | Reports/docs: clear README, reports, screenshots |
+
+## 5. Core Functions (spec)
+
+### 5.1 Login
+Login is required, but a **guest / stub** login is allowed (document it as a limitation).
+
+### 5.2 `search_items_by_name_under_price(query, max_price, limit=5) -> list[str]`
+- Search by `query`.
+- If the page has a price filter (min/max), use it to narrow the results.
+- Use **XPath** to collect the first `limit` items whose price is **≤ `max_price`**.
+- If the current page has fewer than `limit` matches:
+  - if there is paging ("Next" button / page links), go to the next page and keep collecting until `limit` is reached or the pages run out;
+  - if there is no paging, return what was found (even if fewer than `limit`).
+- Returns a list of up to `limit` item URLs. Returning fewer, even 0, is valid.
+- Example: `urls = search_items_by_name_under_price("shoes", 220, 5)`
+
+### 5.3 `add_items_to_cart(urls: list[str]) -> None`
+- Loop over the URLs and open each item page.
+- If the item has variants (size/color/quantity), pick **random available** values.
+- Click **"Add to cart"**.
+- Go back to the search screen/tab.
+- Save a **screenshot + log** for each item added.
+
+### 5.4 `assert_cart_total_not_exceeds(budget_per_item: float, items_count: int) -> None`
+- Open the cart.
+- Read the subtotal/total as shown on the site.
+- Compute the threshold: `budget_per_item * items_count`.
+- Assert that the total is **not above** the threshold.
+- Save a **screenshot/trace** of the cart page.
+
+### 5.5 Full scenario example
+1. `search_items_by_name_under_price("shoes", 220, 5)` → up to 5 URLs.
+2. `add_items_to_cart(urls)` → all of them are added to the cart.
+3. `assert_cart_total_not_exceeds(220, len(urls))` → cart total ≤ 220 × item count.
+
+---
+
+## 6. Stages & Milestones
+
+### Stage 0 — Project Setup (~20 min) ✅ DONE
+- [x] `requirements.txt` / `pyproject.toml`: `playwright`, `pytest`, `pytest-playwright`, `allure-pytest`, `pyyaml`, `python-dotenv`.
+- [x] `playwright install chromium`.
+- [x] `.gitignore` (venv, `__pycache__`, `reports/`, `allure-results/`, `.env`).
+- [x] Folder skeleton:
+  ```
+  core/        # config loader, logger, base classes
+  pages/       # page objects (Home, Login, SearchResults, Item, Cart)
+  components/  # reusable UI parts (header search bar, variant selector, pagination)
+  utils/       # price parser, screenshot/attachment helpers
+  data/        # test data (YAML/JSON) + env profiles
+  tests/       # e2e + unit tests
+  reports/     # generated reports (gitignored)
+  ```
+
+> ✅ **Milestone 0:** `pytest` runs a smoke test that opens ebay.com (headed and headless).
+
+### Stage 1 — Framework Core & Config (~30 min)
+- [ ] `BasePage`: navigation, waits, safe click, element text, screenshot helper.
+- [ ] Logger (console + file).
+- [ ] Config loader: `ENV` variable + profiles (e.g. `dev`, `ci`) → base URL, headless, timeouts, slow-mo, locale/currency.
+- [ ] `conftest.py` fixtures: browser/context/page, tracing on, screenshot on failure, Allure attachments.
+
+> ✅ **Milestone 1:** profile switchable via `ENV=ci pytest`; a failing test produces a screenshot and trace in the report.
+
+### Stage 2 — Data-Driven Test Data (~15 min)
+- [ ] `data/search_cases.yaml` with rows like `{query: shoes, max_price: 220, limit: 5}`.
+- [ ] Credentials / guest flag from `.env` (never committed; provide `.env.example`).
+- [ ] Parametrize tests from the data file.
+
+> ✅ **Milestone 2:** adding a row to the data file adds a test case with no code changes.
+
+### Stage 3 — Login (~15 min)
+- [ ] `LoginPage` / `AuthService`: guest mode by default (eBay shows captcha/bot protection on sign-in); real login behind a config flag.
+
+> ✅ **Milestone 3:** session is ready as guest; the limitation is noted in the README.
+
+### Stage 4 — Search with Price Condition (~50 min)
+- [ ] `SearchResultsPage`: run the search and apply the min/max price filter (fall back to URL params such as `_udhi` if the UI filter is missing).
+- [ ] XPath locators for item cards, title, price, link; skip sponsored/placeholder cards ("Shop on eBay").
+- [ ] `utils/price_parser.py`: handles currency symbols, commas, ranges ("$10.00 to $25.00" → take the upper bound when checking against max), and "free"/missing price.
+- [ ] Pagination component: click "Next" until `limit` is reached or there is no next page.
+- [ ] Unit tests for the price parser.
+
+> ✅ **Milestone 4:** `search_items_by_name_under_price("shoes", 220, 5)` returns ≤ 5 URLs, all priced ≤ 220; price parser unit tests pass.
+
+### Stage 5 — Add Items to Cart (~45 min)
+- [ ] `ItemPage` + `VariantSelector` component: detect variant dropdowns/buttons, pick a random **available** value, set quantity.
+- [ ] Handle dynamic cases: out-of-stock options, overlays/popups, "See all options", items opened in a new tab.
+- [ ] Click "Add to cart", close the cart dialog, navigate back.
+- [ ] Screenshot + log per item, attached to Allure.
+
+> ✅ **Milestone 5:** every URL from Stage 4 is added to the cart, with one screenshot per item in the report.
+
+### Stage 6 — Assert Cart Total (~25 min)
+- [ ] `CartPage`: open the cart and read the subtotal with the price parser.
+- [ ] Compute `budget_per_item * items_count` and assert `total <= budget`, with a clear failure message (actual vs. budget).
+- [ ] Screenshot + trace of the cart page.
+
+> ✅ **Milestone 6:** the assertion passes for the full scenario; a forced failure shows a readable message.
+
+### Stage 7 — E2E Test & Reports (~20 min)
+- [ ] `tests/test_e2e_cart_budget.py`: search → add → assert, parametrized from the data file, with Allure steps.
+- [ ] Reports: Allure results + JUnit XML (`--junitxml=reports/junit.xml`) + optional `pytest-html`.
+
+> ✅ **Milestone 7:** one command gives a green run and an Allure report with steps, screenshots and trace.
+
+### Stage 8 — Bug Exercise: `ReadMeAIBugs.md` (~20 min)
+Static review of the AI-generated snippet: find **at least 3 bugs**, explain each in detail, and propose fixed code.
+
+Bugs to cover:
+1. **Mixed frameworks:** `from selenium import webdriver` is unused and has nothing to do with Playwright.
+2. **Resource leak:** `sync_playwright().start()` is never stopped, and `browser.close()` is skipped if anything fails. Fix: `with sync_playwright() as p:` plus `try/finally`, or a pytest fixture.
+3. **Hard waits:** `time.sleep(2)` and `time.sleep(3)` are slow and flaky. Fix: rely on Playwright auto-waiting and `expect(...)`.
+4. **No assertion:** `results` is created but never checked, so the test always passes. Fix: `expect(results.first).to_be_visible()` / `expect(results).not_to_have_count(0)`.
+5. **Weak locators:** the generic `.button` can match many elements (strict mode violation) or the wrong one. Fix: `page.get_by_role("button", name="Search")`.
+6. **Wrong target:** `https://example.com` has no `#search` box, so the test cannot work. The URL is also hard-coded instead of coming from config.
+
+- [ ] Include the full corrected snippet.
+
+> ✅ **Milestone 8:** `ReadMeAIBugs.md` lists ≥ 3 bugs, each with an explanation and fixed lines.
+
+### Stage 9 — README & Delivery (~20 min)
+- [ ] README: prerequisites, installation, run commands (per ENV/profile), how to generate/open reports.
+- [ ] Short architecture explanation (folder tree + layers).
+- [ ] Limitations/assumptions: guest login stub, captcha/bot detection, regional pricing/currency, dynamic DOM, sponsored items, shipping not included in the price filter.
+- [ ] Push to GitHub and confirm the repo is accessible.
+
+> ✅ **Milestone 9:** fresh clone → follow the README → tests run and the report opens.
+
+---
+
+## 7. Final Delivery Checklist
+| Requirement (from instructions) | Stage |
+|---|---|
+| Playwright + Python | 0 |
+| Self-developed POM, OOP, SRP, utils | 1, 4–6 |
+| Data-driven from external file (JSON/CSV/YAML) | 2 |
+| Config / ENV / profiles | 1 |
+| Login (guest/stub allowed) | 3 |
+| Search with price filter + XPath + paging | 4 |
+| Price parser | 4 |
+| Add to cart with random variants + screenshot/log per item | 5 |
+| Assert cart total ≤ budget × count + screenshot/trace | 6 |
+| Full E2E scenario | 7 |
+| Report (Allure / HTML / JUnit XML) | 7 |
+| `ReadMeAIBugs` with ≥ 3 bugs, explanations, fixes | 8 |
+| README: how to run, architecture, limitations | 9 |
+| GitHub link with access | 9 |
