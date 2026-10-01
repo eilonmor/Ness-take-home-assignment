@@ -10,9 +10,15 @@ from playwright.sync_api import Locator, Page
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from core.config import Settings
+from core.exceptions import BotChallengeError
 from core.logger import get_logger
 from utils.attachments import attach_screenshot
 from utils.files import safe_filename, timestamp
+
+# eBay answers suspected bots with one of these pages instead of the content.
+# "Error Page" is what a headless browser gets on a cold visit.
+BOT_CHALLENGE_TITLES = ("Pardon Our Interruption", "Security Measure", "Error Page")
+BOT_CHALLENGE_URL_PARTS = ("/splashui/captcha", "/splashui/challenge")
 
 
 class BasePage:
@@ -34,6 +40,7 @@ class BasePage:
     def open(self) -> Self:
         self.log.info("Opening %s", self.path)
         self.page.goto(self.path, wait_until="domcontentloaded")
+        self.ensure_not_blocked()
         return self
 
     def go_back(self) -> None:
@@ -57,6 +64,18 @@ class BasePage:
         except PlaywrightTimeoutError:
             return False
         return True
+
+    def ensure_not_blocked(self) -> None:
+        """Fail fast with a clear reason when eBay shows a bot check instead of the page."""
+        reason = bot_challenge_reason(self.page.title(), self.page.url)
+        if reason is None:
+            return
+        self.take_screenshot("bot_challenge")
+        raise BotChallengeError(
+            f"eBay served a bot check ({reason}) at {self.page.url}. "
+            "eBay blocks headless runs and rate-limits bursts of runs: run headed "
+            "(ENV=dev or HEADLESS=false) and wait a few minutes before retrying."
+        )
 
     # --- actions ----------------------------------------------------------
 
@@ -88,6 +107,19 @@ class BasePage:
         attach_screenshot(path, name)
         self.log.info("Screenshot saved: %s", path)
         return path
+
+
+def bot_challenge_reason(title: str, url: str) -> str | None:
+    """Why this page looks like a bot check, or None for a normal page."""
+    # Whole-title match ("Error Page | eBay" -> "error page"), so an item named
+    # "Error Page T-Shirt" is not mistaken for a block page.
+    page_name = title.split("|")[0].strip().rstrip(".").lower()
+    if page_name in (blocked.lower() for blocked in BOT_CHALLENGE_TITLES):
+        return f"title '{title}'"
+    for url_part in BOT_CHALLENGE_URL_PARTS:
+        if url_part in url:
+            return f"URL contains '{url_part}'"
+    return None
 
 
 def _first_line(error: Exception) -> str:

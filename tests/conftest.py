@@ -15,6 +15,9 @@ saved under reports/ and attached to the Allure report.
 Data-driven: a test that takes a ``search_case`` argument runs once per row
 of the profile's data file (``data.search_cases``, default
 data/search_cases.yaml). Adding a row adds a test case.
+
+Session: a test that takes ``user_session`` starts on the eBay home page as
+a guest (default) or signed in (EBAY_GUEST=false + credentials in .env).
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from playwright.sync_api import Browser, BrowserContext, Page, Playwright, expec
 from core.config import Settings, load_settings
 from core.data_loader import load_search_cases
 from core.logger import configure_logging, get_logger
+from services.auth_service import AuthService, UserSession
 from utils.attachments import attach_screenshot, attach_trace
 from utils.files import safe_filename, timestamp
 
@@ -155,3 +159,9 @@ def _finish_tracing(context: BrowserContext, settings: Settings, run_id: str, fa
 @pytest.fixture
 def page(context: BrowserContext) -> Page:
     return context.new_page()
+
+
+@pytest.fixture
+def user_session(page: Page, settings: Settings) -> UserSession:
+    """The page on eBay home, ready as guest or signed-in user (``auth`` settings)."""
+    return AuthService(page, settings).start_session()
