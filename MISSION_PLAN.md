@@ -30,6 +30,8 @@
 ### 5.1 Login
 Login is required, but a **guest / stub** login is allowed (document it as a limitation).
 
+**CAPTCHA is out of scope:** there is no need to solve, bypass or work around eBay's CAPTCHA / bot checks. When one appears, the run stops with a clear `BotChallengeError` and a screenshot, and the limitation is documented in the README.
+
 ### 5.2 `search_items_by_name_under_price(query, max_price, limit=5) -> list[str]`
 - Search by `query`.
 - If the page has a price filter (min/max), use it to narrow the results.
@@ -73,6 +75,7 @@ Login is required, but a **guest / stub** login is allowed (document it as a lim
   core/        # config loader, logger, base classes
   pages/       # page objects (Home, Login, SearchResults, Item, Cart)
   components/  # reusable UI parts (header search bar, variant selector, pagination)
+  services/    # business flows composed from pages (AuthService; later search/cart)
   utils/       # price parser, screenshot/attachment helpers
   data/        # test data (YAML/JSON)
   tests/       # e2e + unit tests
@@ -95,12 +98,16 @@ Login is required, but a **guest / stub** login is allowed (document it as a lim
 - [x] `data/search_cases.yaml` with rows like `{query: shoes, max_price: 220, limit: 5}`. Loaded by `core/data_loader.py` into validated `SearchCase` rows (optional `budget_per_item`, `id`).
 - [x] Credentials / guest flag from `.env` (never committed; provide `.env.example`). `auth.guest` in the profile, `EBAY_GUEST` / `EBAY_USERNAME` / `EBAY_PASSWORD` from the environment.
 - [x] Parametrize tests from the data file: any test that takes a `search_case` argument runs once per row (`pytest_generate_tests`). Rationale: [docs/DECISIONS.md](docs/DECISIONS.md) ADR-5.
-- Note for Stage 4: in headless mode, a cold deep link to `/sch/...` returns eBay's "Error Page", and a burst of runs triggers "Pardon Our Interruption" (bot challenge) even when headed. Search from the home page and handle/report the challenge page explicitly.
+- Note for Stage 4: in headless mode, a cold deep link to `/sch/...` returns eBay's "Error Page", and a burst of runs triggers "Pardon Our Interruption" (bot challenge) even when headed. Search from the home page and report the challenge page explicitly (no CAPTCHA handling, see 5.1).
 
 > ✅ **Milestone 2:** adding a row to the data file adds a test case with no code changes.
 
-### Stage 3 — Login (~15 min)
-- [ ] `LoginPage` / `AuthService`: guest mode by default (eBay shows captcha/bot protection on sign-in); real login behind a config flag.
+### Stage 3 — Login (~15 min) ✅ DONE
+- [x] `LoginPage` / `AuthService`: guest mode by default (eBay shows captcha/bot protection on sign-in); real login behind a config flag.
+  - `services/auth_service.py` (`AuthService.start_session() -> UserSession`), `pages/home_page.py`, `pages/login_page.py`, `components/header.py`; `user_session` fixture in `tests/conftest.py`.
+  - The header component closes the "Are you shipping to …?" modal, which blocks every click on the page.
+  - `BasePage.open()` detects bot-check pages ("Error Page", "Security Measure", "Pardon Our Interruption", `/splashui/captcha`) and raises `BotChallengeError` with a screenshot instead of timing out. Detection only: the CAPTCHA itself is not handled (out of scope, see 5.1).
+  - Real sign-in (`EBAY_GUEST=false`) is implemented but not verified end to end: no test account, and headless sign-in always redirects to a captcha. Rationale: [docs/DECISIONS.md](docs/DECISIONS.md) ADR-6.
 
 > ✅ **Milestone 3:** session is ready as guest; the limitation is noted in the README.
 
@@ -152,7 +159,7 @@ Bugs to cover:
 ### Stage 9 — README & Delivery (~20 min)
 - [ ] README: prerequisites, installation, run commands (per ENV/profile), how to generate/open reports.
 - [ ] Short architecture explanation (folder tree + layers).
-- [ ] Limitations/assumptions: guest login stub, captcha/bot detection, regional pricing/currency, dynamic DOM, sponsored items, shipping not included in the price filter.
+- [ ] Limitations/assumptions: guest login stub, captcha/bot detection (not handled, out of scope), regional pricing/currency, dynamic DOM, sponsored items, shipping not included in the price filter.
 - [ ] Push to GitHub and confirm the repo is accessible.
 
 > ✅ **Milestone 9:** fresh clone → follow the README → tests run and the report opens.

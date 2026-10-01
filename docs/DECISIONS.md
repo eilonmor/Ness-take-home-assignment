@@ -113,3 +113,33 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 - ✅ A new row means a new test case, with its own id in pytest, Allure and the artifact file names.
 - ✅ Bad data fails at collection with a precise message instead of halfway through a browser session.
 - ❌ The settings are now loaded at collection time too, so an invalid profile or `.env` also breaks `pytest --collect-only`. They are loaded once and cached on `config.stash`, so the fixtures reuse the same instance.
+
+---
+
+## ADR-6 — Guest session by default, behind an `AuthService`
+
+**Context.** The spec requires a login step but allows a guest/stub one. Probing eBay showed:
+- A headless browser gets `Error Page | eBay` on the home page and is redirected to `/splashui/captcha` ("Security Measure") on sign-in.
+- Headed runs reach the sign-in form (`#userid` → `#signin-continue-btn` → `#pass` → `#sgnBt`), but a burst of runs is rate-limited with the same block pages.
+- A guest can search and use the cart, which is all the scenario needs.
+- An "Are you shipping to …?" modal opens on first visit and intercepts every click until it is dismissed.
+
+**Decision.**
+- [services/auth_service.py](../services/auth_service.py) `AuthService.start_session()` opens the home page and returns a `UserSession`. With `auth.guest: true` (the default) it checks that the header shows the signed-out state. With `EBAY_GUEST=false` it signs in through [pages/login_page.py](../pages/login_page.py) and checks that the header shows a signed-in user.
+- Tests ask for the `user_session` fixture. The scenario code does not know or care which mode is active.
+- [components/header.py](../components/header.py) closes the ship-to modal and reads the sign-in state with CSS locators. While the modal is open, eBay marks the rest of the header `aria-hidden`, so role locators find nothing.
+- `BasePage.open()` checks for bot-check pages and raises `BotChallengeError` with a screenshot. `LoginPage` turns inline errors ("We couldn't find this eBay account") and unexpected extra steps (2FA, passkey) into `LoginError`.
+
+**Alternatives.**
+
+| Option | Why not |
+|---|---|
+| Always sign in | Captcha cannot be automated reliably (or legitimately), so every run would depend on a human. |
+| Reuse a saved `storage_state` from a manual login | Works, but the session cookies are credentials: they must not be committed and they expire. It is a possible extension, with the file path in `.env`. |
+| Bypass bot detection (patched user agent, stealth plugins) | Works against the site's protection on purpose. Running headed and documenting the limitation is the honest choice. |
+
+**Consequences.**
+- ✅ The scenario runs without an account. Switching to a real sign-in is a `.env` change, not a code change.
+- ✅ A blocked run fails in about 2 s with "eBay served a bot check (title 'Error Page | eBay')…" instead of a timeout on a missing element.
+- ❌ Real sign-in is implemented but not verified end to end (no test account, and headless always hits the captcha). Only the unknown-account error path was checked by hand.
+- ❌ Guest only: no saved addresses or watchlist. Prices and the cart total are those shown to an anonymous visitor in the detected region.
