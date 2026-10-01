@@ -1,3 +1,6 @@
+import shutil
+from pathlib import Path
+
 import pytest
 
 from core import config
@@ -143,3 +146,23 @@ def test_guest_env_variable_rejects_typos(monkeypatch: pytest.MonkeyPatch) -> No
 
     with pytest.raises(ValueError, match="EBAY_GUEST: Expected a boolean"):
         load_settings("ci")
+
+
+@pytest.mark.parametrize(
+    ("key", "yaml_text"),
+    [
+        ("auth.guest", 'auth:\n  guest: "false"\n'),
+        ("browser.headless", "browser:\n  headless: 0\n"),
+        ("artifacts.screenshot_on_failure", "artifacts:\n  screenshot_on_failure: 'yes'\n"),
+    ],
+)
+def test_profile_booleans_must_be_real_yaml_booleans(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, key: str, yaml_text: str
+) -> None:
+    # A quoted "false" is a truthy string: it must fail, not silently mean True.
+    shutil.copy(config.PROFILES_DIR / "base.yaml", tmp_path / "base.yaml")
+    (tmp_path / "broken.yaml").write_text(yaml_text, encoding="utf-8")
+    monkeypatch.setattr(config, "PROFILES_DIR", tmp_path)
+
+    with pytest.raises(ValueError, match=f"{key} must be true or false"):
+        load_settings("broken")

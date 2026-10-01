@@ -194,7 +194,7 @@ def _build_settings(env: str, raw: dict[str, Any]) -> Settings:
         log_level=raw["log_level"].upper(),
         browser=BrowserSettings(
             name=browser["name"],
-            headless=bool(browser["headless"]),
+            headless=_profile_bool(browser["headless"], "browser.headless"),
             slow_mo_ms=int(browser["slow_mo_ms"]),
             viewport_width=int(browser["viewport"]["width"]),
             viewport_height=int(browser["viewport"]["height"]),
@@ -207,7 +207,7 @@ def _build_settings(env: str, raw: dict[str, Any]) -> Settings:
         artifacts=ArtifactSettings(
             dir=_project_path(artifacts["dir"]),
             trace=artifacts["trace"],
-            screenshot_on_failure=bool(artifacts["screenshot_on_failure"]),
+            screenshot_on_failure=_profile_bool(artifacts["screenshot_on_failure"], "artifacts.screenshot_on_failure"),
         ),
         data=DataSettings(search_cases=_project_path(raw["data"]["search_cases"])),
         auth=_build_auth(raw["auth"]),
@@ -216,7 +216,7 @@ def _build_settings(env: str, raw: dict[str, Any]) -> Settings:
 
 def _build_auth(auth: dict[str, Any]) -> AuthSettings:
     """Guest flag from the profile/EBAY_GUEST; credentials only from the environment."""
-    guest = bool(auth["guest"])
+    guest = _profile_bool(auth["guest"], "auth.guest")
     username, password = _env("EBAY_USERNAME"), _env("EBAY_PASSWORD")
     if not guest and not (username and password):
         raise ValueError("Real login (EBAY_GUEST=false) needs EBAY_USERNAME and EBAY_PASSWORD in the environment or .env")
@@ -227,3 +227,10 @@ def _project_path(value: str) -> Path:
     """Relative paths in profiles are relative to the project root, not the CWD."""
     path = Path(value)
     return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _profile_bool(value: Any, key: str) -> bool:
+    """YAML booleans only: a quoted ``"false"`` is a truthy string, so reject it."""
+    if not isinstance(value, bool):
+        raise ValueError(f"{key} must be true or false (unquoted), got {value!r}")
+    return value

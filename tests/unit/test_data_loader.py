@@ -52,6 +52,13 @@ def test_json_file_is_accepted(tmp_path: Path) -> None:
         ("{query: shoes, max_price: 10, limit: 2.5}", "'limit' must be a positive integer"),
         ("{query: shoes, max_price: 10, limit: yes}", "'limit' must be a positive integer"),
         ("{query: shoes, max_price: 10, budget_per_item: -1}", "'budget_per_item' must be a positive number"),
+        ("{query: shoes, max_price: .inf}", "'max_price' must be a positive number, got inf"),
+        ("{query: shoes, max_price: .nan}", "'max_price' must be a positive number, got nan"),
+        ("{query: shoes, max_price: 10, budget_per_item: .inf}", "'budget_per_item' must be a positive number"),
+        ("{id: 123, query: shoes, max_price: 10}", "'id' must be a non-empty string, got 123"),
+        ("{id: false, query: shoes, max_price: 10}", "'id' must be a non-empty string, got False"),
+        ("{id: '  ', query: shoes, max_price: 10}", "'id' must be a non-empty string"),
+        ("{id: [a], query: shoes, max_price: 10}", "'id' must be a non-empty string"),
         ("{query: shoes, max_pirce: 10}", r"unknown key\(s\) \['max_pirce'\]"),
         ("shoes", "expected a mapping, got str"),
     ],
@@ -72,5 +79,5 @@ def test_missing_or_empty_cases_list_is_rejected(tmp_path: Path, content: str) -
 def test_duplicate_ids_are_rejected(tmp_path: Path) -> None:
     path = write_cases(tmp_path, "cases:\n  - {query: shoes, max_price: 10}\n  - {query: shoes, max_price: 10}\n")
 
-    with pytest.raises(ValueError, match="duplicate case id 'shoes-under-10'"):
+    with pytest.raises(ValueError, match=r"case #2: duplicate case id 'shoes-under-10' \(first used by case #1\)"):
         load_search_cases(path)

@@ -7,6 +7,7 @@ browser session.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
@@ -43,13 +44,15 @@ def load_search_cases(path: Path) -> list[SearchCase]:
     if not isinstance(rows, list) or not rows:
         raise ValueError(f"{path.name}: expected a non-empty 'cases:' list")
 
-    cases = [_parse_case(row, f"{path.name} case #{index}") for index, row in enumerate(rows, start=1)]
-
-    seen: set[str] = set()
-    for case in cases:
-        if case.id in seen:
-            raise ValueError(f"{path.name}: duplicate case id '{case.id}'")
-        seen.add(case.id)
+    cases: list[SearchCase] = []
+    first_row_by_id: dict[str, int] = {}
+    for index, row in enumerate(rows, start=1):
+        where = f"{path.name} case #{index}"
+        case = _parse_case(row, where)
+        if case.id in first_row_by_id:
+            raise ValueError(f"{where}: duplicate case id '{case.id}' (first used by case #{first_row_by_id[case.id]})")
+        first_row_by_id[case.id] = index
+        cases.append(case)
     return cases
 
 
@@ -76,11 +79,18 @@ def _parse_case(row: Any, where: str) -> SearchCase:
     if budget_per_item is not None:
         budget_per_item = _positive_number(budget_per_item, "budget_per_item", where)
 
-    case_id = str(row.get("id") or safe_filename(f"{query}-under-{max_price:g}"))
+    if "id" in row:
+        case_id = row["id"]
+        if not isinstance(case_id, str) or not case_id.strip():
+            raise ValueError(f"{where}: 'id' must be a non-empty string, got {case_id!r}")
+        case_id = case_id.strip()
+    else:
+        case_id = safe_filename(f"{query}-under-{max_price:g}")
     return SearchCase(id=case_id, query=query, max_price=max_price, limit=limit, budget_per_item=budget_per_item)
 
 
 def _positive_number(value: Any, name: str, where: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+    # isfinite: YAML's .inf would remove the bound and .nan would fail every comparison.
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
         raise ValueError(f"{where}: '{name}' must be a positive number, got {value!r}")
     return float(value)
