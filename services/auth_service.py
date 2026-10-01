@@ -12,6 +12,7 @@ from core.exceptions import LoginError
 from core.logger import get_logger
 from pages.home_page import HomePage
 from pages.login_page import LoginPage
+from utils.tracing import tracing_paused
 
 
 @dataclass(frozen=True)
@@ -58,8 +59,10 @@ class AuthService:
         # config.load_settings guarantees both credentials when guest is off.
         assert auth.username and auth.password
         with allure.step(f"Sign in as {auth.username}"):
-            home.header.click_sign_in()
-            LoginPage(self.page, self.settings).sign_in(auth.username, auth.password)
+            # Not traced: the trace would store the password in plain text.
+            with tracing_paused(self.page.context, self.settings.artifacts.trace != "off"):
+                home.header.click_sign_in()
+                LoginPage(self.page, self.settings).sign_in(auth.username, auth.password)
             home.header.dismiss_ship_to_dialog()
             if not home.header.is_signed_in():
                 raise LoginError(f"Sign-in finished, but the header still shows: {home.header.greeting()!r}")

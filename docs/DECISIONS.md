@@ -141,5 +141,7 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 **Consequences.**
 - ✅ The scenario runs without an account. Switching to a real sign-in is a `.env` change, not a code change.
 - ✅ A blocked run fails in about 2 s with "eBay served a bot check (title 'Error Page | eBay')…" instead of a timeout on a missing element.
+- ✅ The password never reaches a trace. A trace stores every `fill()` value in plain text, and failing traces are attached to the report. So the sign-in runs inside `tracing_paused` ([utils/tracing.py](../utils/tracing.py)), and [tests/unit/test_tracing.py](../tests/unit/test_tracing.py) checks the trace zip for the secret.
+- ❌ A trace of a real-login run starts after sign-in: the home page and the sign-in steps are dropped. A failed sign-in is still covered by the failure screenshot and the `LoginError` message.
 - ❌ Real sign-in is implemented but not verified end to end (no test account, and headless always hits the captcha). Only the unknown-account error path was checked by hand.
 - ❌ Guest only: no saved addresses or watchlist. Prices and the cart total are those shown to an anonymous visitor in the detected region.
