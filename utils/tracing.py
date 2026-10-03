@@ -4,10 +4,20 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from weakref import WeakKeyDictionary
 
 from playwright.sync_api import BrowserContext
 
 from core.constants import TRACE_START_OPTIONS
+
+# Title each context's trace was started with, so a pause can restart it under the same name.
+_titles: WeakKeyDictionary[BrowserContext, str | None] = WeakKeyDictionary()
+
+
+def start_tracing(context: BrowserContext, title: str | None = None) -> None:
+    """Start recording, e.g. under the test id; use this (not ``tracing.start``) so ``tracing_paused`` keeps the title."""
+    _titles[context] = title
+    context.tracing.start(title=title, **TRACE_START_OPTIONS)
 
 
 @contextmanager
@@ -31,7 +41,7 @@ def tracing_paused(context: BrowserContext, tracing_active: bool) -> Iterator[No
     try:
         yield
     finally:
-        context.tracing.start(**TRACE_START_OPTIONS)
+        context.tracing.start(title=_titles.get(context), **TRACE_START_OPTIONS)
 
 
 @contextmanager

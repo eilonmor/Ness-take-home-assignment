@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Self
+from typing import NoReturn, Self
 
 from playwright.sync_api import Locator, Page
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -66,8 +66,7 @@ class LoginPage(BasePage):
         """
         with tracing_paused(self.page.context, self.settings.artifacts.trace != TraceMode.OFF):
             self.fill(self.password_input, password)
-            with self.expect_navigation(lambda url: True):
-                self.click(self.sign_in_button)
+            self._click_and_wait_for_new_page(self.sign_in_button, step="password")
             self._wait_for_step(self.home_header.or_(self.passkey_skip), step="password")
             self._skip_passkey_offer()
 
@@ -76,8 +75,7 @@ class LoginPage(BasePage):
         if not self.passkey_skip.is_visible():
             return
         self.log.info("eBay offers to create a passkey; choosing 'Skip for now'")
-        with self.expect_navigation(lambda url: True):
-            self.click(self.passkey_skip)
+        self._click_and_wait_for_new_page(self.passkey_skip, step="passkey offer")
         self._wait_for_step(self.home_header, step="passkey offer")
 
     def switch_account(self) -> None:
@@ -129,11 +127,23 @@ class LoginPage(BasePage):
             # step, and plain `.first` would wait on it instead of the error after it.
             expected.or_(self.error_message).filter(visible=True).first.wait_for(state="visible")
         except PlaywrightTimeoutError:
-            self.ensure_not_blocked()
-            raise LoginError(
-                f"Sign-in stopped after the {step} step at {self.page.url} "
-                f"(likely an extra check such as 2FA or a passkey prompt). Use guest mode: {EnvVar.GUEST}=true."
-            ) from None
+            self._stopped_after(step)
+
+    def _click_and_wait_for_new_page(self, locator: Locator, step: str) -> None:
+        """Click and wait for eBay's next page; an answer inside the page (no new page) is reported like a stuck step."""
+        try:
+            with self.expect_navigation(lambda url: True):
+                self.click(locator)
+        except PlaywrightTimeoutError:
+            self._stopped_after(step)
+
+    def _stopped_after(self, step: str) -> NoReturn:
+        """A bot check raises BotChallengeError; anything else is an unknown extra step."""
+        self.ensure_not_blocked()
+        raise LoginError(
+            f"Sign-in stopped after the {step} step at {self.page.url} "
+            f"(likely an extra check such as 2FA or a passkey prompt). Use guest mode: {EnvVar.GUEST}=true."
+        ) from None
 
     def _raise_on_error(self, step: str) -> None:
         if (error := self.error_text()) is not None:

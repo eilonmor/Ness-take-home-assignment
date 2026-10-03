@@ -32,13 +32,14 @@ from playwright.sync_api import Browser, BrowserContext, Page, Playwright, expec
 
 from core import stealth
 from core.config import Settings, load_settings
-from core.constants import TRACE_START_OPTIONS, ArtifactFiles, AttachmentName, HtmlReport, PytestOption, TraceMode
+from core.constants import ArtifactFiles, AttachmentName, HtmlReport, PytestOption, TraceMode
 from core.data_loader import load_search_cases
 from core.logger import configure_logging, get_logger
 from services.auth_service import AuthService, UserSession
 from utils.attachments import attach_screenshot, attach_trace, write_allure_environment
 from utils.files import safe_filename, timestamp
 from utils.html_report import screenshot_extra, trace_extra
+from utils.tracing import start_tracing
 
 log = get_logger("conftest")
 
@@ -170,7 +171,7 @@ def context(browser: Browser, settings: Settings, request: pytest.FixtureRequest
 
     trace_mode = settings.artifacts.trace
     if trace_mode != TraceMode.OFF:
-        context.tracing.start(title=request.node.nodeid, **TRACE_START_OPTIONS)
+        start_tracing(context, title=request.node.nodeid)
 
     yield context
 

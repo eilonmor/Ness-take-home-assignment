@@ -370,9 +370,9 @@ The trace of the stealth run shows why: the **first** request, `GET https://www.
 **Decision.**
 - `LoginPage` exposes the steps: `submit_username`, `submit_password`, `switch_account`, and getters for the state (`error_text`, `is_on_username_step`, `is_on_password_step`, `account_shown`, `is_sign_in_enabled`, …). The steps **return** with eBay's inline error, so tests can check it. `sign_in` is built on top of them and still raises `LoginError` naming the rejected step.
 - The wait only looks at visible elements (`.filter(visible=True).first`). This needs Playwright ≥ 1.51.
-- `submit_password` waits for a navigation before reading the answer. Otherwise, on a second try, the error left from the first try would be read as the answer.
+- `submit_password` waits for a navigation before reading the answer. Otherwise, on a second try, the error left from the first try would be read as the answer. If no new page comes (an answer inside the page), the step fails like any stuck step: bot-check detection first, then `LoginError`, not a bare Playwright timeout.
 - `LoginPage.submit_password` pauses tracing itself, so every caller is covered. `AuthService` no longer pauses (the two pauses would nest). `tracing_paused` now does a full `tracing.stop()` / `tracing.start()` with the fixture's options (`TRACE_START_OPTIONS`).
-- Live tests in [tests/e2e/test_login.py](../tests/e2e/test_login.py) (marker `login`) open the form from the home page header (`AuthService.open_sign_in_page`). Those that need the account skip without credentials. Expected texts are fragments, in `LoginErrorText`.
+- Live tests in [tests/e2e/test_login.py](../tests/e2e/test_login.py) (marker `login`) open the form from the home page header (`AuthService.open_sign_in_page`). Those that need the account take `account_login_page`, which depends on `account`, so without credentials they are skipped **before** anything is opened on eBay. Expected texts are fragments, in `LoginErrorText`.
 - Offline: [tests/unit/test_login_page.py](../tests/unit/test_login_page.py) runs `LoginPage` against a routed stand-in for the form, so the waiting logic is checked without eBay's rate limits.
 
 **Alternatives.**
@@ -388,6 +388,6 @@ The trace of the stealth run shows why: the **first** request, `GET https://www.
 - ✅ A rejected username is reported with eBay's own message, in about a second instead of a 15 s timeout.
 - ✅ The password is out of the trace's snapshots **and** its network log, checked offline on every unit run.
 - ❌ Each live test opens the home page again, so `pytest -m login` is a burst that eBay's rate limit can cut off ("Error Page" at setup). Space the runs out, or run single tests.
-- ❌ The trace's title (the test id) is lost after a pause, because `start()` gets no title, so a trace of a signed-in run starts after the sign-in, as before.
+- ❌ A trace of a signed-in run starts after the sign-in, as before. Its title (the test id) is kept: the fixture starts tracing through `utils.tracing.start_tracing`, which remembers the title for the restart.
 - ❌ The live tests depend on eBay's English texts and on the account staying in good standing.
 - *Update (2026-10): passkey offer.* After a correct password eBay may show "Simplify your sign-in" (`accounts.ebay.com/acctsec/authn-register`) and offer to create a passkey. That needs a real authenticator, so `submit_password` clicks "Skip for now" (`#passkeys-cancel-btn`), which goes on to the home page, signed in. This is an optional step eBay offers, not a bot check, so declining it fits ADR-6. Before this, every signed-in run that got the offer failed with "2FA or a passkey prompt?". Covered offline by `test_passkey_offer_after_the_password_is_skipped`.

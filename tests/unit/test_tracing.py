@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Browser, sync_playwright
 
-from utils.tracing import tracing_paused
+from utils.tracing import start_tracing, tracing_paused
 
 LOGIN_FORM = '<input id="user"><input id="pass" type="password">'
 POST_FORM = '<form method="post" action="/s"><input id="pass" name="pass" type="password"><button>Sign in</button></form>'
@@ -86,6 +86,21 @@ def test_paused_trace_omits_a_password_sent_in_a_form_post(browser: Browser, sec
 
     assert not _trace_contains(tmp_path / "trace.zip", secret)
     assert _trace_contains(tmp_path / "trace.zip", "signed in")
+
+
+def test_trace_keeps_its_title_after_a_pause(browser: Browser, tmp_path: Path) -> None:
+    """The trace viewer names a trace by its title (the test id); restarting after a pause must keep it."""
+    title = f"tests/e2e/test_login.py::test_{uuid.uuid4().hex}"
+    context = browser.new_context()
+    start_tracing(context, title=title)
+    page = context.new_page()
+    page.set_content(LOGIN_FORM)
+    with tracing_paused(context, tracing_active=True):
+        page.fill("#pass", "secret")
+    context.tracing.stop(path=tmp_path / "trace.zip")
+    context.close()
+
+    assert _trace_contains(tmp_path / "trace.zip", title)
 
 
 def test_tracing_resumes_when_the_block_fails(browser: Browser, tmp_path: Path) -> None:

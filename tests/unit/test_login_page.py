@@ -223,6 +223,15 @@ def test_passkey_offer_after_the_password_is_skipped(login: LoginPage) -> None:
     assert login.page.url == HOME_URL
 
 
+def test_sign_in_answered_inside_the_page_raises_login_error(login: LoginPage) -> None:
+    """No new page after Sign in (e.g. an in-page check): LoginError naming the step, not a bare Playwright timeout."""
+    login.submit_username(USERNAME)
+    login.page.evaluate("() => { document.querySelector('#password-step').onsubmit = (event) => event.preventDefault(); }")
+
+    with pytest.raises(LoginError, match="stopped after the password step"):
+        login.submit_password("anything")
+
+
 def test_the_typed_password_stays_out_of_the_trace(login: LoginPage, context: BrowserContext, tmp_path: Path) -> None:
     login.sign_in(USERNAME, PASSWORD)
     context.tracing.stop(path=tmp_path / "trace.zip")
