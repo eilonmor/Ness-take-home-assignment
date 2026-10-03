@@ -24,22 +24,26 @@ a guest (default) or signed in (EBAY_GUEST=false + credentials in .env).
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import Any
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, expect, sync_playwright
 
 from core.config import Settings, load_settings
-from core.constants import ArtifactFiles, AttachmentName, PytestOption, TraceMode
+from core.constants import ArtifactFiles, AttachmentName, HtmlReport, PytestOption, TraceMode
 from core.data_loader import load_search_cases
 from core.logger import configure_logging, get_logger
 from services.auth_service import AuthService, UserSession
-from utils.attachments import attach_screenshot, attach_trace
+from utils.attachments import attach_screenshot, attach_trace, write_allure_environment
 from utils.files import safe_filename, timestamp
+from utils.html_report import screenshot_extra, trace_extra
 
 log = get_logger("conftest")
 
 phase_reports_key = pytest.StashKey[dict[str, pytest.TestReport]]()
 settings_key = pytest.StashKey[Settings]()
+html_extras_key = pytest.StashKey[list[Any]]()
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -59,11 +63,55 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
         metafunc.parametrize(PytestOption.SEARCH_CASE_ARG, cases, ids=[case.id for case in cases])
 
 
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    # allure-pytest stores --alluredir as `allure_report_dir`; absent when Allure is turned off.
+    results_dir = session.config.getoption("allure_report_dir", default=None)
+    if not results_dir:
+        return
+    # Report extra: a broken profile has already failed the run on its own.
+    try:
+        write_allure_environment(Path(results_dir), _environment(_load_settings_once(session.config)))
+    except Exception as error:
+        log.warning("Could not write the Allure environment: %s", error)
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_html_report_title(report: Any) -> None:
+    report.title = HtmlReport.TITLE
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_metadata(metadata: dict[str, Any], config: pytest.Config) -> None:
+    # The "Environment" table of the pytest-html report: the same settings as the Allure one.
+    try:
+        metadata.update(_environment(_load_settings_once(config)))
+    except Exception as error:
+        log.warning("Could not add the settings to the HTML report: %s", error)
+
+
+def _environment(settings: Settings) -> dict[str, str]:
+    return {
+        "Profile": settings.env,
+        "Base URL": settings.base_url,
+        "Browser": settings.browser.name,
+        "Headless": str(settings.browser.headless),
+        "Locale": settings.locale,
+        "Currency": settings.currency,
+        "Session": "guest" if settings.auth.guest else "signed in",
+        "Cart total line": settings.cart.total_line,
+        "Trace": settings.artifacts.trace,
+        "Data file": settings.data.search_cases.name,
+    }
+
+
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> Iterator[pytest.TestReport]:
     # Keep each phase's report on the item so fixtures can tell whether the test failed.
     report = yield
     item.stash.setdefault(phase_reports_key, {})[report.when] = report
+    if report.when == "teardown":
+        # Evidence is saved by the context fixture's teardown, which has run by now.
+        report.extras = [*getattr(report, "extras", []), *item.stash.get(html_extras_key, [])]
     return report
 
 
@@ -126,16 +174,22 @@ def context(browser: Browser, settings: Settings, request: pytest.FixtureRequest
     try:
         failed = _test_failed(request.node)
         run_id = f"{timestamp()}_{safe_filename(request.node.name)}"
+        html_extras = request.node.stash.setdefault(html_extras_key, [])
         if failed and settings.artifacts.screenshot_on_failure:
-            _save_failure_screenshots(context, settings, run_id)
-        _finish_tracing(context, settings, run_id, failed)
+            for index, path in _save_failure_screenshots(context, settings, run_id):
+                html_extras += screenshot_extra(path, AttachmentName.FAILURE_SCREENSHOT.format(index=index))
+        trace_path = _finish_tracing(context, settings, run_id, failed)
+        if trace_path is not None:
+            html_report = request.config.getoption(HtmlReport.PATH_OPTION, default=None)
+            html_extras += trace_extra(trace_path, Path(html_report) if html_report else None, AttachmentName.TRACE)
     except Exception as error:
         log.warning("Could not collect test evidence: %s", error)
     finally:
         context.close()
 
 
-def _save_failure_screenshots(context: BrowserContext, settings: Settings, run_id: str) -> None:
+def _save_failure_screenshots(context: BrowserContext, settings: Settings, run_id: str) -> list[tuple[int, Path]]:
+    saved = []
     for index, page in enumerate(context.pages):
         file_name = ArtifactFiles.FAILURE_SCREENSHOT.format(run_id=run_id, index=index)
         path = settings.artifacts.screenshots_dir / f"{file_name}{ArtifactFiles.SCREENSHOT_SUFFIX}"
@@ -146,17 +200,22 @@ def _save_failure_screenshots(context: BrowserContext, settings: Settings, run_i
             log.warning("Could not capture failure screenshot of page %d: %s", index, error)
             continue
         log.info("Failure screenshot: %s", path)
+        saved.append((index, path))
+    return saved
 
 
-def _finish_tracing(context: BrowserContext, settings: Settings, run_id: str, failed: bool) -> None:
+def _finish_tracing(context: BrowserContext, settings: Settings, run_id: str, failed: bool) -> Path | None:
+    """Stop tracing; returns the saved trace file, if this run keeps one."""
     trace_mode = settings.artifacts.trace
     if trace_mode == TraceMode.ON or (trace_mode == TraceMode.RETAIN_ON_FAILURE and failed):
         trace_path = settings.artifacts.traces_dir / f"{run_id}{ArtifactFiles.TRACE_SUFFIX}"
         context.tracing.stop(path=trace_path)
         attach_trace(trace_path)
         log.info("Trace saved: %s (open with: playwright show-trace %s)", trace_path, trace_path)
-    elif trace_mode != TraceMode.OFF:
+        return trace_path
+    if trace_mode != TraceMode.OFF:
         context.tracing.stop()
+    return None
 
 
 @pytest.fixture

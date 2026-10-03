@@ -1,7 +1,94 @@
 # Ness-take-home-assignment
 
 E2E scenario on eBay with Playwright + Python: search → filter by price → add to cart → assert the cart total.
-The full README (setup, run commands, reports) is written in Stage 9; see [MISSION_PLAN.md](MISSION_PLAN.md).
+Spec and stage tracker: [MISSION_PLAN.md](MISSION_PLAN.md). Design decisions: [docs/DECISIONS.md](docs/DECISIONS.md).
+
+## Prerequisites
+
+| Tool | Version | Needed for |
+|---|---|---|
+| Python | 3.11+ (developed on 3.14) | Running the tests (`typing.Self`) |
+| Git | any | Cloning the repo |
+| Allure CLI | 2.x, needs Java 8+ | Viewing the Allure report only (`allure serve`). Install with `scoop install allure` (Windows), `brew install allure` (macOS) or `npm install -g allure-commandline`. |
+
+A desktop session with a visible browser is also needed: eBay blocks headless browsers (see [Bot detection](#bot-detection)).
+
+## Setup
+
+```bash
+git clone https://github.com/eilonmor/Ness-take-home-assignment.git
+cd Ness-take-home-assignment
+
+python -m venv .venv
+.venv\Scripts\activate          # Windows (PowerShell)
+source .venv/bin/activate       # macOS / Linux
+
+pip install -r requirements.txt
+python -m playwright install chromium
+
+cp .env.example .env            # optional: local overrides, git-ignored
+pytest --collect-only           # sanity check: validates the profile, .env and data file
+```
+
+## Configuration
+
+Settings are layered; each layer overrides the one before it:
+
+1. [config/base.yaml](config/base.yaml): defaults for every profile (base URL, browser, timeouts, artifacts, search and cart options).
+2. `config/<profile>.yaml`: the keys a profile changes.
+   - `dev` (default): headed, `slow_mo` 100 ms, DEBUG logs.
+   - `ci`: headless, longer timeouts. eBay will most likely block it (see [Bot detection](#bot-detection)).
+3. Environment variables, from the shell or from `.env`.
+
+**Choosing a profile:** `pytest --env ci`, or `ENV=ci` in the environment / `.env`. Without either, `dev` is used.
+
+**One-off overrides** (environment or `.env`):
+
+| Variable | Example | Effect |
+|---|---|---|
+| `HEADLESS` | `false` | Show or hide the browser |
+| `SLOW_MO` | `250` | Delay between actions (ms) |
+| `BROWSER` | `firefox` | `chromium`, `firefox` or `webkit` (install the extra browsers with `python -m playwright install firefox webkit`) |
+| `BASE_URL` | `https://www.ebay.co.uk` | Another eBay site |
+| `TRACE` | `on` | Keep the Playwright trace of passing runs too (default: only failed runs) |
+| `RANDOM_SEED` | `12345` | Replay the random variant picks of an earlier run (the seed is logged) |
+| `EBAY_GUEST`, `EBAY_USERNAME`, `EBAY_PASSWORD` | | Real sign-in instead of guest (see [Login](#login-guest-session-by-default)). Credentials are read only from the environment, never from profiles. |
+
+PowerShell syntax: `$env:HEADLESS="false"; pytest`. Bash: `HEADLESS=false pytest`.
+
+**Test data:** [data/search_cases.yaml](data/search_cases.yaml). Each row is one test case: `query`, `max_price`, optional `limit` (default 5), `budget_per_item` (default `max_price`) and `id` (test name in the reports). Adding a row adds a test, with no code change.
+
+## Running the tests
+
+```bash
+pytest tests/e2e/test_e2e_cart_budget.py   # the full scenario: search → add to cart → cart total check, once per data row
+pytest tests/e2e                           # every live test (smoke + scenario steps)
+pytest -m e2e                              # only the scenario tests (search, add to cart, cart total)
+pytest -m smoke                            # quick checks: home page, session, search page
+pytest tests/unit                          # offline unit tests, no browser or eBay needed
+pytest                                     # everything
+```
+
+- A single data row: `pytest "tests/e2e/test_e2e_cart_budget.py::test_cart_total_not_exceeds_budget[shoes-under-220]"`.
+- The live tests open a real browser on eBay. Running many of them back to back can trigger eBay's rate limiting. The run then stops with `BotChallengeError`; wait a few minutes (sometimes longer) before retrying.
+
+## Reports
+
+Every `pytest` run writes all of its output under `reports/` (git-ignored). Each run **replaces** the previous reports, so copy them elsewhere if you want to keep them.
+
+| Report | Location | Created | How to open |
+|---|---|---|---|
+| **Allure** (main report) | `reports/allure-results/` | Every run. The folder is emptied at the start of the run (`--clean-alluredir`). | `allure serve reports/allure-results`: builds the report and opens it in the browser. For a static copy: `allure generate reports/allure-results -o reports/allure-report --clean`, then `allure open reports/allure-report`. |
+| **HTML** | `reports/report.html` | Every run, at the end of the run. | Open the file in a browser (`start reports\report.html` on Windows). It is one self-contained file, with no tool needed. Do not use VS Code's preview: it blocks the report's scripts. |
+| **JUnit XML** | `reports/junit.xml` | Every run, at the end of the run. | For CI dashboards (Jenkins, GitHub Actions, Azure DevOps). |
+| Screenshots | `reports/screenshots/*.png` | Step screenshots on every run (session ready, each search results page, each item added, the cart page). A full-page screenshot of every open tab when a test fails. | Any image viewer; also attached to the Allure report. |
+| Playwright traces | `reports/traces/*.zip` | When a test fails (default), or for every test with `TRACE=on`. | `playwright show-trace reports/traces/<file>.zip`, or drag the file onto [trace.playwright.dev](https://trace.playwright.dev). |
+| Log | `reports/logs/run.log` | Every run (rewritten each time). | Any text editor. |
+
+**What each report shows:**
+- **Allure:** one entry per test and data row, with numbered steps (search → add to cart → cart total) and the services' sub-steps. Inside them: the step screenshots, the list of items found, the items added (with the variant seed), and the "Cart total vs. budget" attachment. Failed tests also carry the failure screenshots and the trace. The **Environment** widget shows the run's settings (profile, base URL, browser, headless, session, trace mode, data file).
+- **HTML:** pass/fail per test with filters, the captured log of each test, the same environment settings, and for failed tests the failure screenshot and a link to the trace. It has no steps; use Allure for those.
+- **JUnit XML:** pass/fail and failure messages only.
 
 ## Limitations
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Take-home assignment: Playwright + Python E2E scenario against live eBay (search under a price → add items to cart → assert cart total ≤ budget × count), built as a self-developed Page Object Model with Allure reports. [MISSION_PLAN.md](MISSION_PLAN.md) is the spec and stage tracker (stages 0–6 done, 7+ pending) — check it before starting work and tick off items when a stage lands. Non-obvious design choices are recorded as ADRs in [docs/DECISIONS.md](docs/DECISIONS.md); add a new ADR (Context → Decision → Alternatives → Consequences) for any comparable decision.
+Take-home assignment: Playwright + Python E2E scenario against live eBay (search under a price → add items to cart → assert cart total ≤ budget × count), built as a self-developed Page Object Model with Allure reports. [MISSION_PLAN.md](MISSION_PLAN.md) is the spec and stage tracker (stages 0–6 done, 7 awaiting a live green run, 8+ pending) — check it before starting work and tick off items when a stage lands. Non-obvious design choices are recorded as ADRs in [docs/DECISIONS.md](docs/DECISIONS.md); add a new ADR (Context → Decision → Alternatives → Consequences) for any comparable decision.
 
 ## Commands
 
@@ -18,11 +18,13 @@ pytest                                   # all tests, profile from $ENV / .env, 
 pytest --env ci                          # pick profile config/ci.yaml (or ENV=ci pytest)
 pytest tests/unit                        # offline unit tests (no eBay)
 pytest -m smoke                          # markers: smoke, e2e
+pytest tests/e2e/test_e2e_cart_budget.py # the full scenario (spec 5.5), one run per data row
 pytest tests/unit/test_config.py::test_name
 pytest "tests/e2e/test_search_smoke.py::test_search_results_page_opens[shoes-under-220]"
 pytest --collect-only                    # also validates profile, .env and data file
 
 allure serve reports/allure-results      # needs the separate Allure CLI; pytest.ini always writes here (--clean-alluredir)
+# every run also writes reports/junit.xml and reports/report.html (pytest-html, self-contained)
 playwright show-trace reports/traces/<file>.zip
 ```
 
