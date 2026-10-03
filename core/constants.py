@@ -44,6 +44,10 @@ class TraceMode(StrEnum):
     RETAIN_ON_FAILURE = "retain-on-failure"
 
 
+# What a trace records; also used to restart tracing after a pause (utils/tracing.py).
+TRACE_START_OPTIONS = {"screenshots": True, "snapshots": True, "sources": True}
+
+
 class CartTotalLine(StrEnum):
     """Which order-summary row the cart budget check reads (``cart.total_line``)."""
 
@@ -273,6 +277,23 @@ class LoginPageLocators:
     SIGN_IN_BUTTON = "#sgnBt"
     # Inline error under the field, e.g. "We couldn't find this eBay account."
     ERROR_MESSAGE = "#signin-error-msg"
+    # "Welcome back!" step: the username it is asking the password for.
+    USER_INFO = "#user-info"
+    # The span, not its inner a#switch-account-anchor: the span intercepts the click.
+    SWITCH_ACCOUNT = "#switch-account-link"
+    # Host of every sign-in step (the password step posts to /signin/s).
+    HOST_PART = "signin.ebay."
+
+
+class LoginErrorText:
+    """Stable fragments of eBay's inline sign-in errors (seen live, en-US)."""
+
+    # Continue with an empty username: "Oops, that's not a match."
+    EMPTY_USERNAME = "not a match"
+    # "We couldn't find this eBay account. Try again or create an account."
+    UNKNOWN_ACCOUNT = "couldn't find this eBay account"
+    # "This password is incorrect. Try again or reset password."
+    WRONG_PASSWORD = "password is incorrect"
 
 
 class SearchResultsXPaths:
@@ -337,6 +358,7 @@ SEED_UPPER_BOUND = 2**32
 class ScreenshotName:
     BOT_CHALLENGE = "bot_challenge"
     SESSION_READY = "session_ready_{label}"
+    SIGN_IN_REJECTED = "sign_in_rejected_{step}"
     SEARCH_PAGE = "search_{query}_page_{page}"
     CART_ITEM = "cart_item_{number}"
     CART_ITEM_FAILED = "cart_item_{number}_failed"
@@ -402,6 +424,10 @@ class AssertMessage:
     NOT_BACK_ON_SEARCH = "Expected to be back on the search results tab"
     ITEM_TABS_OPEN = "Item tabs should be closed"
     HEADER_SHOWS = "Header shows: {greeting!r}"
+    LOGIN_ERROR = "Expected a sign-in error containing {expected!r}, eBay showed {actual!r}"
+    LOGIN_STEP = "Expected the {expected} step of the sign-in form"
+    PASSWORD_NOT_CLEARED = "The password field should be emptied after a rejected password"
+    PASSWORD_NOT_MASKED = "The password field should be masked, its type is {actual!r}"
     # Spec 5.4: actual vs. budget, and how the budget was computed.
     CART_TOTAL_ABOVE_BUDGET = (
         "Cart {line} {total} is above the budget {budget:,.2f} "

@@ -2,7 +2,7 @@
 
 Every test in the suite, split into groups. For each test: **what it checks** and **the expected result**.
 
-**186 tests collected**: 10 run against live eBay (E2E + smoke), 176 run offline (unit). A number like **(×N)** after a test name means it is parametrized and runs N times.
+**217 tests collected**: 18 run against live eBay (smoke, E2E, sign-in form), 199 run offline (unit). A number like **(×N)** after a test name means it is parametrized and runs N times.
 
 | Group | Files | Runs against | Tests |
 |---|---|---|---|
@@ -15,13 +15,16 @@ Every test in the suite, split into groups. For each test: **what it checks** an
 | [7. Configuration](#7-configuration-profiles-and-env-vars) | `test_config.py` | pure Python | 45 |
 | [8. Test data loading](#8-test-data-loading-data-driven-cases) | `test_data_loader.py` | pure Python | 26 |
 | [9. Bot detection and navigation](#9-bot-detection-and-navigation) | `test_bot_challenge.py`, `test_navigation.py` | pure Python / routed browser | 9 |
-| [10. Security: secrets in traces](#10-security-secrets-in-traces) | `test_tracing.py` | headless browser | 4 |
+| [10. Security: secrets in traces](#10-security-secrets-in-traces) | `test_tracing.py` | headless browser | 5 |
 | [11. Utilities and reporting](#11-utilities-and-reporting) | `test_urls.py`, `test_attachments.py` | pure Python | 4 |
+| [12. Sign-in form (live eBay)](#12-sign-in-form-live-ebay) | `test_login.py` | live eBay | 8 |
+| [13. Sign-in form steps (offline)](#13-sign-in-form-steps-offline) | `test_login_page.py` | routed browser | 10 |
 
 ```bash
 pytest -m smoke        # group 1
 pytest -m e2e          # group 2
-pytest tests/unit      # groups 3–11 (offline, no eBay)
+pytest -m login        # group 12 (needs EBAY_USERNAME / EBAY_PASSWORD for most tests)
+pytest tests/unit      # groups 3–11 and 13 (offline, no eBay)
 ```
 
 The data-driven tests (groups 1 and 2) run once per row of [data/search_cases.yaml](../data/search_cases.yaml). Today there are two rows: `shoes-under-220` (shoes, max 220, limit 5) and `usb-c-cable-under-15` (usb c cable, max 15, limit 3).
@@ -197,12 +200,13 @@ Checks the XPath locators against markup copied from a live eBay results page, a
 
 ## 10. Security: secrets in traces
 
-**`test_tracing.py`**: Playwright traces store `fill()` values in plain text and get attached to reports. `tracing_paused` must keep passwords out.
+**`test_tracing.py`**: Playwright traces store `fill()` values and request bodies in plain text and get attached to reports. `tracing_paused` must keep passwords out.
 
 | Test | What it checks | Expected result |
 |---|---|---|
 | `test_unpaused_trace_records_the_password` | Control: typing a password **without** pausing. | The secret **is** in the trace zip, which proves the leak check below works. |
 | `test_paused_trace_omits_the_password_and_keeps_recording` | Typing the password inside `tracing_paused`. | The secret is **not** in the trace, and later actions ("signed in") are still recorded. |
+| `test_paused_trace_omits_a_password_sent_in_a_form_post` | Submitting a form that POSTs the password (like eBay's sign-in) inside `tracing_paused`. | The secret is in neither the snapshots nor the network log, and recording resumes afterwards. |
 | `test_tracing_resumes_when_the_block_fails` | An exception inside the paused block. | Tracing is resumed, and the trace zip is still saved. |
 | `test_inactive_tracing_is_left_alone` | Pausing when tracing was never started. | No error. |
 
@@ -214,3 +218,36 @@ Checks the XPath locators against markup copied from a live eBay results page, a
 | `test_query_param_missing_is_none` (`test_urls.py`) | Reading a param that is not there. | `None`. |
 | `test_without_query_keeps_the_item_path` (`test_urls.py`) | Removing tracking params and the fragment from an item URL. | `https://www.ebay.com/itm/298422393864`. |
 | `test_allure_environment_is_a_properties_file` (`test_attachments.py`) | Writing Allure's `environment.properties`. | One `key=value` per line. Spaces in keys and backslashes are escaped (`Base\ URL=…`, `data\\search_cases.yaml`). |
+
+## 12. Sign-in form (live eBay)
+
+How eBay's two-step sign-in form (username → password) reacts to bad input. Marker: `login`. Each test opens the form from the home page header, so it uses one home-page visit, like a user. Every test except the invalid-username ones needs `EBAY_USERNAME` / `EBAY_PASSWORD` in `.env` and is **skipped** without them. `EBAY_GUEST` does not matter here. The expected error texts are fragments of what eBay showed live (2026-10), kept in `LoginErrorText`.
+
+A run makes **three failed password attempts** on the test account (the wrong password, the wrong case, and the retry test). Don't add more, so eBay does not lock the account or send it to a captcha (ADR-13).
+
+| Test | What it checks | Expected result |
+|---|---|---|
+| `test_invalid_username_is_rejected` **(×2)** | Continue with an empty username, then with an address that has no eBay account. | `empty-username`: "Oops, that's not a match." `unknown-account`: "We couldn't find this eBay account…". In both cases the form stays on the username step, and the password step is never shown. |
+| `test_password_step_for_a_known_account` | Continue with the real username. | "Welcome back!" step: no error, the username is shown back (ignoring case), the password field is masked (`type=password`), and **Sign in** is disabled while the field is empty. |
+| `test_username_is_trimmed_and_case_insensitive` | Continue with the username in upper case and with spaces around it. | Accepted: no error, and the form moves on to the password step. |
+| `test_wrong_password_is_rejected` | The real username with a random wrong password. | "This password is incorrect…". Still on the sign-in host and the password step, and the password field has been emptied. |
+| `test_password_is_case_sensitive` | The real password with every letter's case swapped. | Rejected with the wrong-password error. Skipped if the password has no letters. |
+| `test_switch_account_returns_to_username_step` | "Switch account" on the password step. | Back to the username step, with an empty username field. |
+| `test_sign_in_succeeds_after_a_wrong_password` | A wrong password, then the right one on the same form. | The first try is rejected. The second one lands on eBay with the header showing a signed-in user, so one failed try does not block the account. |
+
+Not covered: "Reset your password" (it goes straight to a captcha page, which is out of scope), sign-in with Google, Apple or Facebook (third-party accounts), and sign-out (its markup has not been checked live yet).
+
+## 13. Sign-in form steps (offline)
+
+**`test_login_page.py`** (headless browser; `signin.ebay.com` and `www.ebay.com` are answered by a fake route that keeps the live form's ids and texts). It checks `LoginPage` without eBay's rate limits: what it reports after each step, and that it waits for the right answer.
+
+| Test | What it checks | Expected result |
+|---|---|---|
+| `test_rejected_username_stops_on_the_username_step_with_the_error` **(×2)** | `submit_username` with an empty username, then an unknown one. eBay keeps the hidden password field in the page, before the error. | Returns quickly with the inline error, not a timeout on the hidden field. Still on the username step. |
+| `test_known_username_reaches_the_password_step` | `submit_username` with a known username. | Password step. The username is shown back, the field is masked, and Sign in is disabled. |
+| `test_wrong_password_returns_the_error_page_with_an_empty_field` | `submit_password` with a wrong password. | The wrong-password error, still on the sign-in host, the password field emptied. |
+| `test_retry_after_a_wrong_password_waits_for_the_new_answer` | The right password after a wrong one, while the old error is still on screen. | Lands on the home page. The old error is not taken as the answer to the new try. |
+| `test_switch_account_goes_back_to_an_empty_username` | `switch_account()`. | Username step, empty field. |
+| `test_sign_in_raises_login_error_naming_the_rejected_step` **(×2)** | `sign_in` with an unknown username, then with a wrong password. | `LoginError` saying "rejected the username" or "rejected the password". |
+| `test_sign_in_lands_on_the_home_page` | `sign_in` with the right credentials. | Ends on the home page URL. |
+| `test_the_typed_password_stays_out_of_the_trace` | A full `sign_in` with tracing on. | The password is nowhere in the trace zip, including the network log of the form POST. |

@@ -15,6 +15,7 @@ from playwright.sync_api import Browser, sync_playwright
 from utils.tracing import tracing_paused
 
 LOGIN_FORM = '<input id="user"><input id="pass" type="password">'
+POST_FORM = '<form method="post" action="/s"><input id="pass" name="pass" type="password"><button>Sign in</button></form>'
 
 
 @pytest.fixture(scope="module")
@@ -62,6 +63,31 @@ def test_paused_trace_omits_the_password_and_keeps_recording(browser: Browser, s
     assert _trace_contains(tmp_path / "trace.zip", "signed in")  # recording resumed after the block
 
 
+def test_paused_trace_omits_a_password_sent_in_a_form_post(browser: Browser, secret: str, tmp_path: Path) -> None:
+    """The network log keeps request bodies, and eBay posts the password as a form field."""
+    context = browser.new_context()
+    context.route(
+        "https://signin.test/**",
+        lambda route: route.fulfill(
+            content_type="text/html",
+            body=POST_FORM if route.request.method == "GET" else "<p>signed in</p>",
+        ),
+    )
+    context.tracing.start(screenshots=True, snapshots=True, sources=True)
+    page = context.new_page()
+    page.goto("https://signin.test/")
+    with tracing_paused(context, tracing_active=True):
+        page.fill("#pass", secret)
+        with page.expect_navigation():
+            page.click("button")
+    page.click("p")
+    context.tracing.stop(path=tmp_path / "trace.zip")
+    context.close()
+
+    assert not _trace_contains(tmp_path / "trace.zip", secret)
+    assert _trace_contains(tmp_path / "trace.zip", "signed in")
+
+
 def test_tracing_resumes_when_the_block_fails(browser: Browser, tmp_path: Path) -> None:
     context = browser.new_context()
     context.tracing.start(snapshots=True)
@@ -75,7 +101,7 @@ def test_tracing_resumes_when_the_block_fails(browser: Browser, tmp_path: Path) 
 
 
 def test_inactive_tracing_is_left_alone(browser: Browser) -> None:
-    context = browser.new_context()  # no tracing.start(): stop_chunk() would raise
+    context = browser.new_context()  # no tracing.start(): stop() would raise
     with tracing_paused(context, tracing_active=False):
         pass
     context.close()
