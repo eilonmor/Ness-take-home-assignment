@@ -24,6 +24,8 @@ SIGN_IN_URL = "https://signin.ebay.com/signin"
 HOME_URL = "https://www.ebay.com/"
 USERNAME = "qa-user@example.com"
 UNKNOWN = "nobody@example.com"
+PASSKEY_USER = "passkey-user@example.com"  # eBay offers this one a passkey after the password
+PASSKEY_URL = "https://accounts.ebay.com/acctsec/authn-register?srt=x&ru=https%3A%2F%2Fwww.ebay.com%2F"
 PASSWORD = f"Right-{uuid.uuid4().hex}"  # generated: traces pack this source file too
 
 SIGN_IN_PAGE = """
@@ -73,6 +75,11 @@ SIGN_IN_PAGE = """
 """
 
 HOME_PAGE = '<div id="gh"><div class="gh-identity">Hi Qa!</div></div>'
+PASSKEY_PAGE = f"""
+<h1>Simplify your sign-in</h1>
+<button id="add-passkey-btn">Continue</button>
+<a id="passkeys-cancel-btn" href="{HOME_URL}">Skip for now</a>
+"""
 
 
 def sign_in_page(user: str = "", error: str = "") -> str:
@@ -94,11 +101,14 @@ def fake_ebay(route: Route) -> None:
     if request.url.startswith(SIGN_IN_URL + "/s"):
         form = parse_qs(request.post_data or "")
         if form.get("pass") == [PASSWORD]:
+            next_url = PASSKEY_URL if form.get("userid") == [PASSKEY_USER] else HOME_URL
             # A JS redirect, not a 302: a routed request's redirect would go to the real network.
-            route.fulfill(content_type="text/html", body=f"<script>location.replace('{HOME_URL}')</script>")
+            route.fulfill(content_type="text/html", body=f"<script>location.replace('{next_url}')</script>")
             return
         user = form.get("userid", [""])[0]
         route.fulfill(content_type="text/html", body=sign_in_page(user, "This password is incorrect. Try again or reset password."))
+    elif request.url.startswith(PASSKEY_URL.split("?")[0]):
+        route.fulfill(content_type="text/html", body=PASSKEY_PAGE)
     elif request.url.startswith(SIGN_IN_URL):
         route.fulfill(content_type="text/html", body=sign_in_page())
     else:
@@ -202,6 +212,13 @@ def test_sign_in_raises_login_error_naming_the_rejected_step(
 
 def test_sign_in_lands_on_the_home_page(login: LoginPage) -> None:
     login.sign_in(USERNAME, PASSWORD)
+
+    assert login.page.url == HOME_URL
+
+
+def test_passkey_offer_after_the_password_is_skipped(login: LoginPage) -> None:
+    """"Simplify your sign-in" (seen live, 2026-10): Skip for now, and the sign-in ends on the home page."""
+    login.sign_in(PASSKEY_USER, PASSWORD)
 
     assert login.page.url == HOME_URL
 

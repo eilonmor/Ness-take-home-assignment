@@ -283,6 +283,9 @@ class LoginPageLocators:
     SWITCH_ACCOUNT = "#switch-account-link"
     # Host of every sign-in step (the password step posts to /signin/s).
     HOST_PART = "signin.ebay."
+    # "Simplify your sign-in" (accounts.ebay.com/acctsec/authn-register): eBay may offer
+    # a passkey after a correct password. "Skip for now" goes on to the return URL, signed in.
+    PASSKEY_SKIP = "#passkeys-cancel-btn"
 
 
 class LoginErrorText:
@@ -303,19 +306,24 @@ class SearchResultsXPaths:
     # Site texts and classes the card filters below key on.
     PLACEHOLDER_CARD_TITLE = "Shop on eBay"
     FEWER_WORDS_DIVIDER = "srp-river-answer--REWRITE_START"
+    # "No exact matches found" block, rendered before the list on a 0-results page.
+    NULL_SEARCH = "srp-save-null-search"
     BUY_IT_NOW = "Buy It Now"
     BIDS = " bid"
 
     RESULTS_LIST = f"//ul[{_has_class('srp-results')}]"
     # Real listings only. Skipped: carousels / filter / paging rows (srp-river-answer),
-    # the "Shop on eBay" placeholder card, and everything after the "Results matching
-    # fewer words" divider (those cards do not match the query).
+    # the "Shop on eBay" placeholder card, everything after the "Results matching
+    # fewer words" divider (those cards do not match the query), and every card on a
+    # "0 results" page: eBay still fills the list there, with fuzzy matches on parts
+    # of the query (seen live: "qzxvkj wplmnr 9h7t3" -> 14 bulbs and RAM sticks with "H9", "T7").
     ITEM_CARDS = (
         f"{RESULTS_LIST}/li[{_has_class('s-card')}][@data-listingid]"
         f"[not(starts-with(normalize-space(.//*[contains(@class, 's-card__title')]), '{PLACEHOLDER_CARD_TITLE}'))]"
         f"[not(preceding-sibling::li[contains(@class, '{FEWER_WORDS_DIVIDER}')])]"
+        f"[not(preceding::*[contains(@class, '{NULL_SEARCH}')])]"
     )
-    NO_RESULTS = "//*[contains(@class, 'srp-save-null-search')]"
+    NO_RESULTS = f"//*[contains(@class, '{NULL_SEARCH}')]"
     # Relative to a card; the keys are read by the card reader script in pages/search_results_page.py.
     CARD_FIELDS = {
         # The title also holds a visually hidden "Opens in a new window or tab" span.
@@ -413,11 +421,15 @@ class PytestOption:
 class Expected:
     # Matched case-insensitively against the home page title.
     HOME_TITLE = "ebay"
+    # A query eBay has no listing for ("0 results"); its results list still holds fuzzy matches.
+    NO_MATCH_QUERY = "qzxvkj wplmnr 9h7t3"
+    NO_MATCH_MAX_PRICE = 1000
     ITEM_URL_PART = Endpoints.ITEM_PATH_PART
 
 
 class AssertMessage:
     NO_ITEMS_FOUND = "No items found for {query!r} <= {max_price:g}"
+    ITEMS_FOR_NO_MATCH = "eBay found nothing for {query!r}, but the search collected: {titles}"
     DUPLICATE_URLS = "Duplicate URLs: {urls}"
     PRICE_ABOVE_MAX = "{title!r} costs {price}, above {max_price:g}"
     CART_COUNT = "Cart shows {actual} items, expected {expected}"

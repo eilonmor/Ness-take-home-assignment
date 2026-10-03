@@ -2,13 +2,13 @@
 
 Every test in the suite, split into groups. For each test: **what it checks** and **the expected result**.
 
-**217 tests collected**: 18 run against live eBay (smoke, E2E, sign-in form), 199 run offline (unit). A number like **(×N)** after a test name means it is parametrized and runs N times.
+**236 tests collected**: 31 run against live eBay (smoke, E2E, sign-in form), 205 run offline (unit). A number like **(×N)** after a test name means it is parametrized and runs N times.
 
 | Group | Files | Runs against | Tests |
 |---|---|---|---|
-| [1. Smoke (live eBay)](#1-smoke-tests-live-ebay) | `test_smoke.py`, `test_login.py`, `test_search_smoke.py` | live eBay | 4 |
-| [2. E2E scenario (live eBay)](#2-e2e-scenario-tests-live-ebay) | `test_search.py`, `test_add_to_cart.py`, `test_e2e_cart_budget.py` | live eBay | 6 |
-| [3. Search: XPath parsing and filtering](#3-search-result-parsing-and-filtering) | `test_search_results_page.py`, `test_search_service.py` | local HTML / stubs | 10 |
+| [1. Smoke (live eBay)](#1-smoke-tests-live-ebay) | `test_smoke.py`, `test_login.py`, `test_search_smoke.py` | live eBay | 7 |
+| [2. E2E scenario (live eBay)](#2-e2e-scenario-tests-live-ebay) | `test_search.py`, `test_add_to_cart.py`, `test_e2e_cart_budget.py` | live eBay | 16 |
+| [3. Search: XPath parsing and filtering](#3-search-result-parsing-and-filtering) | `test_search_results_page.py`, `test_search_service.py` | local HTML / stubs | 11 |
 | [4. Cart: add-to-cart flow and budget check](#4-cart-add-to-cart-flow-and-budget-check) | `test_cart_service.py`, `test_cart_page.py` | stubs / local HTML | 17 |
 | [5. Variant selection](#5-variant-selection-size--color) | `test_variant_selector.py` | local HTML | 24 |
 | [6. Price parsing](#6-price-parsing) | `test_price_parser.py` | pure Python | 37 |
@@ -16,9 +16,9 @@ Every test in the suite, split into groups. For each test: **what it checks** an
 | [8. Test data loading](#8-test-data-loading-data-driven-cases) | `test_data_loader.py` | pure Python | 26 |
 | [9. Bot detection and navigation](#9-bot-detection-and-navigation) | `test_bot_challenge.py`, `test_navigation.py` | pure Python / routed browser | 9 |
 | [10. Security: secrets in traces](#10-security-secrets-in-traces) | `test_tracing.py` | headless browser | 5 |
-| [11. Utilities and reporting](#11-utilities-and-reporting) | `test_urls.py`, `test_attachments.py` | pure Python | 4 |
+| [11. Utilities and reporting](#11-utilities-and-reporting) | `test_urls.py`, `test_attachments.py`, `test_text.py` | pure Python | 8 |
 | [12. Sign-in form (live eBay)](#12-sign-in-form-live-ebay) | `test_login.py` | live eBay | 8 |
-| [13. Sign-in form steps (offline)](#13-sign-in-form-steps-offline) | `test_login_page.py` | routed browser | 10 |
+| [13. Sign-in form steps (offline)](#13-sign-in-form-steps-offline) | `test_login_page.py` | routed browser | 11 |
 
 ```bash
 pytest -m smoke        # group 1
@@ -27,7 +27,17 @@ pytest -m login        # group 12 (needs EBAY_USERNAME / EBAY_PASSWORD for most 
 pytest tests/unit      # groups 3–11 and 13 (offline, no eBay)
 ```
 
-The data-driven tests (groups 1 and 2) run once per row of [data/search_cases.yaml](../data/search_cases.yaml). Today there are two rows: `shoes-under-220` (shoes, max 220, limit 5) and `usb-c-cable-under-15` (usb c cable, max 15, limit 3).
+The data-driven tests (groups 1 and 2) run once per row of [data/search_cases.yaml](../data/search_cases.yaml). Today there are five rows, each picked to cover something different (all checked live, 2026-10):
+
+| Row | Query, max, limit | Why it is there |
+|---|---|---|
+| `shoes-under-220` | shoes, 220, 5 | The assignment's example. |
+| `usb-c-cable-under-15` | usb c cable, 15, 3 | Many cheap items, all with one price. |
+| `pokemon-cards-under-30` | pokémon cards, 30, 3 | A query with an accent: eBay titles the page "Pokemon Cards". Auctions with Buy It Now (bid ILS 3, Buy It Now ILS 1,890) must count at the higher price. |
+| `mens-t-shirt-under-25` | mens t shirt, 25, 3 | Clothing: most items ask for a size and a color, so random variant selection runs. |
+| `lego-minifigures-under-24.5` | lego minifigures, 24.5, 2, budget 26 | A decimal `max_price`, and a `budget_per_item` above it: the cart may convert a foreign price at a slightly different rate. |
+
+Every row adds 4 live tests (groups 1 and 2), so keep the list short: eBay rate-limits bursts of runs.
 
 ---
 
@@ -39,7 +49,7 @@ Fast checks that the site is reachable and not blocking us. Marker: `smoke`.
 |---|---|---|
 | `test_ebay_home_page_opens` | Opening the eBay home page through `HomePage.open()`. | The page title matches the eBay home title. If eBay shows a bot-check page ("Error Page", "Pardon Our Interruption"), the test fails with `BotChallengeError` and a screenshot. |
 | `test_session_is_ready` | The `user_session` fixture: guest by default, signed in when `EBAY_GUEST=false`. | `user_session.guest` matches the setting, and the header shows "signed in" exactly when the session is not a guest. |
-| `test_search_results_page_opens` **(×2, per data row)** | After landing on the home page, opening the search results URL for the row's query. | The results page title contains the query text (case-insensitive). |
+| `test_search_results_page_opens` **(×5, per data row)** | After landing on the home page, opening the search results URL for the row's query. | The results page title contains the query text, ignoring case and accents (`utils.text.fold`). |
 
 ## 2. E2E scenario tests (live eBay)
 
@@ -47,9 +57,10 @@ The assignment's business flow, step by step and then end to end. Marker: `e2e`.
 
 | Test | What it checks | Expected result |
 |---|---|---|
-| `test_search_items_by_name_under_price` **(×2)** | Spec 5.2: search by name, filter by max price, collect items via XPath across result pages. | At least 1 item and at most `limit`. URLs are unique, every URL is an `/itm/` link, and every price (the upper bound for a range) is ≤ `max_price`. |
-| `test_add_items_to_cart` **(×2)** | Spec 5.3: open each found item, pick random variants if needed, add it to the cart. | Every found URL is added, in order. The header cart badge equals the number of items. The browser is back on the search page, and no item tabs are left open. |
-| `test_cart_total_not_exceeds_budget` **(×2)** | Spec 5.5, the full scenario: search → add to cart → open cart → check the total. Severity: critical. | Cart total ≤ `budget_per_item × items added`, and the cart has exactly one line per added item. On failure: a `CartBudgetExceededError` with the actual total vs. the budget, plus a screenshot of the cart. |
+| `test_search_items_by_name_under_price` **(×5)** | Spec 5.2: search by name, filter by max price, collect items via XPath across result pages. | At least 1 item and at most `limit`. URLs are unique, every URL is an `/itm/` link, and every price (the upper bound for a range) is ≤ `max_price`. |
+| `test_add_items_to_cart` **(×5)** | Spec 5.3: open each found item, pick random variants if needed, add it to the cart. | Every found URL is added, in order. The header cart badge equals the number of items. The browser is back on the search page, and no item tabs are left open. |
+| `test_cart_total_not_exceeds_budget` **(×5)** | Spec 5.5, the full scenario: search → add to cart → open cart → check the total. Severity: critical. | Cart total ≤ `budget_per_item × items added`, and the cart has exactly one line per added item. On failure: a `CartBudgetExceededError` with the actual total vs. the budget, plus a screenshot of the cart. |
+| `test_search_with_no_matches_returns_no_items` | A query eBay has nothing for (`Expected.NO_MATCH_QUERY`). eBay still fills that "0 results" page with fuzzy matches on parts of the query. | An empty list (spec 5.2 allows it). None of the fuzzy matches is collected. |
 
 ## 3. Search result parsing and filtering
 
@@ -61,6 +72,7 @@ Checks the XPath locators against markup copied from a live eBay results page, a
 |---|---|---|
 | `test_only_real_listings_before_the_fewer_words_divider` | Which cards are collected: skips carousels, the "Shop on eBay" placeholder, cards with no listing id, and anything after the "Results matching fewer words" divider. | Exactly listings `101`–`106`, in page order. |
 | `test_title_without_hidden_suffix_and_clean_url` | Reading title, URL and price from a plain card. | Title is `"Plain shoe"` (no hidden "Opens in a new window" text), URL has no tracking query (`https://www.ebay.com/itm/101`), price is ILS 138.31, not auction-only. |
+| `test_no_items_on_a_zero_results_page` | A "0 results" page: the "No exact matches found" block comes before a list of fuzzy matches (markup seen live). | No items. |
 | `test_range_split_over_spans_is_read_as_range` | A price range that eBay splits over three `<span>`s. | `Price(81.50 → 110.86, ILS)`. |
 | `test_crossed_out_price_is_ignored` | A sale card that also shows the old, crossed-out price. | Only the sale price is read: ILS 139.66. |
 | `test_auction_only_is_flagged` | A card that is an auction ("0 bids") with no Buy It Now. | `auction_only is True`. |
@@ -218,6 +230,8 @@ Checks the XPath locators against markup copied from a live eBay results page, a
 | `test_query_param_missing_is_none` (`test_urls.py`) | Reading a param that is not there. | `None`. |
 | `test_without_query_keeps_the_item_path` (`test_urls.py`) | Removing tracking params and the fragment from an item URL. | `https://www.ebay.com/itm/298422393864`. |
 | `test_allure_environment_is_a_properties_file` (`test_attachments.py`) | Writing Allure's `environment.properties`. | One `key=value` per line. Spaces in keys and backslashes are escaped (`Base\ URL=…`, `data\\search_cases.yaml`). |
+| `test_query_is_found_in_the_title_eBay_rewrote` **(×3)** (`test_text.py`) | `fold()` on a query and the page title eBay made of it ("pokémon cards" → "Pokemon Cards for sale"). | The folded query is found in the folded title. |
+| `test_different_letters_still_differ` (`test_text.py`) | `fold()` removes accents and case only. | "pokémon" and "pokemen" still differ. |
 
 ## 12. Sign-in form (live eBay)
 
@@ -250,4 +264,5 @@ Not covered: "Reset your password" (it goes straight to a captcha page, which is
 | `test_switch_account_goes_back_to_an_empty_username` | `switch_account()`. | Username step, empty field. |
 | `test_sign_in_raises_login_error_naming_the_rejected_step` **(×2)** | `sign_in` with an unknown username, then with a wrong password. | `LoginError` saying "rejected the username" or "rejected the password". |
 | `test_sign_in_lands_on_the_home_page` | `sign_in` with the right credentials. | Ends on the home page URL. |
+| `test_passkey_offer_after_the_password_is_skipped` | After the right password, eBay shows "Simplify your sign-in" (a passkey offer, `accounts.ebay.com/acctsec/authn-register`). | "Skip for now" is clicked, and the sign-in ends on the home page. |
 | `test_the_typed_password_stays_out_of_the_trace` | A full `sign_in` with tracing on. | The password is nowhere in the trace zip, including the network log of the form POST. |

@@ -182,6 +182,7 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 - ❌ The locators target eBay's current `s-card` layout. The older `s-item` layout, which eBay may still serve in some A/B buckets, is not supported. All selectors are constants in one module, so a layout change is a local edit.
 - ❌ `max_price: 220` means 220 in whatever currency the visitor sees. Running from another country changes the meaning of the data rows. This is documented in the README.
 - ❌ Shipping is not part of the price check (the spec compares the item price).
+- *Update (2026-10):* on a "0 results" page eBay still fills the list with fuzzy matches on parts of the query (seen live: 14 bulbs and RAM sticks for "qzxvkj wplmnr 9h7t3"), with no "fewer words" divider before them. `ITEM_CARDS` now also skips every card after the "No exact matches found" block (`srp-save-null-search`). Before this fix, a search with no matches returned unrelated items.
 
 ---
 
@@ -389,3 +390,4 @@ The trace of the stealth run shows why: the **first** request, `GET https://www.
 - ❌ Each live test opens the home page again, so `pytest -m login` is a burst that eBay's rate limit can cut off ("Error Page" at setup). Space the runs out, or run single tests.
 - ❌ The trace's title (the test id) is lost after a pause, because `start()` gets no title, so a trace of a signed-in run starts after the sign-in, as before.
 - ❌ The live tests depend on eBay's English texts and on the account staying in good standing.
+- *Update (2026-10): passkey offer.* After a correct password eBay may show "Simplify your sign-in" (`accounts.ebay.com/acctsec/authn-register`) and offer to create a passkey. That needs a real authenticator, so `submit_password` clicks "Skip for now" (`#passkeys-cancel-btn`), which goes on to the home page, signed in. This is an optional step eBay offers, not a bot check, so declining it fits ADR-6. Before this, every signed-in run that got the offer failed with "2FA or a passkey prompt?". Covered offline by `test_passkey_offer_after_the_password_is_skipped`.

@@ -34,6 +34,7 @@ class LoginPage(BasePage):
         self.error_message = page.locator(Locators.ERROR_MESSAGE)
         self.user_info = page.locator(Locators.USER_INFO)
         self.switch_account_link = page.locator(Locators.SWITCH_ACCOUNT)
+        self.passkey_skip = page.locator(Locators.PASSKEY_SKIP)
         # Present once eBay redirects back to www.ebay.com; not on the sign-in page.
         self.home_header = Header(page, settings).identity
 
@@ -59,15 +60,25 @@ class LoginPage(BasePage):
         """Type the password and Sign in; returns on the eBay home page or an inline error.
 
         Not traced: the trace would store the password in plain text. eBay
-        answers with a new page either way (the home page, or /signin/s with
-        the error), so an error left from an earlier attempt is not mistaken
-        for the answer to this one.
+        answers with a new page either way (the home page, /signin/s with the
+        error, or a passkey offer), so an error left from an earlier attempt is
+        not mistaken for the answer to this one. A passkey offer is skipped.
         """
         with tracing_paused(self.page.context, self.settings.artifacts.trace != TraceMode.OFF):
             self.fill(self.password_input, password)
             with self.expect_navigation(lambda url: True):
                 self.click(self.sign_in_button)
-            self._wait_for_step(self.home_header, step="password")
+            self._wait_for_step(self.home_header.or_(self.passkey_skip), step="password")
+            self._skip_passkey_offer()
+
+    def _skip_passkey_offer(self) -> None:
+        """"Simplify your sign-in": decline creating a passkey, which would need a real authenticator."""
+        if not self.passkey_skip.is_visible():
+            return
+        self.log.info("eBay offers to create a passkey; choosing 'Skip for now'")
+        with self.expect_navigation(lambda url: True):
+            self.click(self.passkey_skip)
+        self._wait_for_step(self.home_header, step="passkey offer")
 
     def switch_account(self) -> None:
         """From the password step back to an empty username step."""
