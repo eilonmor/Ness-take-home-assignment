@@ -3,7 +3,7 @@
 Resolution order (later wins):
     config/base.yaml  ->  config/<ENV>.yaml  ->  environment variables
                                                 (BASE_URL, BROWSER, HEADLESS, SLOW_MO,
-                                                 EBAY_GUEST)
+                                                 EBAY_GUEST, RANDOM_SEED)
 
 The profile is chosen by the ``--env`` pytest option, else the ``ENV``
 environment variable (also read from ``.env``), else ``dev``.
@@ -80,6 +80,15 @@ class SearchSettings:
 
 
 @dataclass(frozen=True)
+class CartSettings:
+    # Seed for the random variant choices; None picks a new one per run
+    # (it is logged, so a run can be replayed with RANDOM_SEED=<seed>).
+    random_seed: int | None
+    # Random variant combinations to try per item before giving up on it.
+    variant_attempts: int
+
+
+@dataclass(frozen=True)
 class AuthSettings:
     guest: bool
     username: str | None = None
@@ -100,6 +109,7 @@ class Settings:
     artifacts: ArtifactSettings
     data: DataSettings
     search: SearchSettings
+    cart: CartSettings
     auth: AuthSettings
 
 
@@ -156,6 +166,8 @@ def _env_overrides() -> dict[str, Any]:
         overrides["browser"] = browser
     if (guest := _env_bool("EBAY_GUEST")) is not None:
         overrides["auth"] = {"guest": guest}
+    if random_seed := _env("RANDOM_SEED"):
+        overrides["cart"] = {"random_seed": _parse_int(random_seed, "RANDOM_SEED")}
     return overrides
 
 
@@ -173,6 +185,13 @@ def _env_bool(name: str) -> bool | None:
         return _parse_bool(value)
     except ValueError as error:
         raise ValueError(f"{name}: {error}") from None
+
+
+def _parse_int(value: str, name: str) -> int:
+    try:
+        return int(value)
+    except ValueError:
+        raise ValueError(f"{name} must be an integer, got '{value}'") from None
 
 
 def _parse_bool(value: str) -> bool:
@@ -219,6 +238,7 @@ def _build_settings(env: str, raw: dict[str, Any]) -> Settings:
         ),
         data=DataSettings(search_cases=_project_path(raw["data"]["search_cases"])),
         search=_build_search(raw["search"]),
+        cart=_build_cart(raw["cart"]),
         auth=_build_auth(raw["auth"]),
     )
 
@@ -228,6 +248,15 @@ def _build_search(search: dict[str, Any]) -> SearchSettings:
     if isinstance(max_pages, bool) or not isinstance(max_pages, int) or max_pages < 1:
         raise ValueError(f"search.max_pages must be a positive integer, got {max_pages!r}")
     return SearchSettings(max_pages=max_pages)
+
+
+def _build_cart(cart: dict[str, Any]) -> CartSettings:
+    seed, attempts = cart["random_seed"], cart["variant_attempts"]
+    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
+        raise ValueError(f"cart.random_seed must be an integer or null, got {seed!r}")
+    if isinstance(attempts, bool) or not isinstance(attempts, int) or attempts < 1:
+        raise ValueError(f"cart.variant_attempts must be a positive integer, got {attempts!r}")
+    return CartSettings(random_seed=seed, variant_attempts=attempts)
 
 
 def _build_auth(auth: dict[str, Any]) -> AuthSettings:

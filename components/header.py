@@ -8,6 +8,9 @@ from core.base_page import BasePage
 from core.config import Settings
 
 
+CART_BADGE = ".gh-cart .gh-badge"
+
+
 class Header(BasePage):
     """Sign-in state and the "Are you shipping to ...?" dialog.
 
@@ -27,6 +30,8 @@ class Header(BasePage):
         self.ship_to_dismiss = self.ship_to_dialog.locator("button.lightbox-dialog__close")
         self.search_input = self.root.locator("#gh-ac")
         self.search_button = self.root.locator("#gh-search-btn")
+        # Number of items in the cart; not rendered while the cart is empty.
+        self.cart_badge = self.root.locator(CART_BADGE)
 
     def is_signed_in(self) -> bool:
         self.wait_until_visible(self.identity)
@@ -52,6 +57,19 @@ class Header(BasePage):
         with self.expect_navigation(lambda url: "/sch/" in url):
             self.click(self.search_button)
 
+    def cart_count(self) -> int:
+        if self.cart_badge.count() == 0:
+            return 0
+        return _badge_count(self.cart_badge.inner_text())
+
+    def wait_for_cart_count_above(self, count: int) -> int:
+        """Wait until the badge shows more than ``count`` items (it updates in place after an add)."""
+        self.page.wait_for_function(
+            "([selector, count]) => parseInt(document.querySelector(`#gh ${selector}`)?.textContent ?? '0', 10) > count",
+            arg=[CART_BADGE, count],
+        )
+        return self.cart_count()
+
     def dismiss_ship_to_dialog(self) -> None:
         """Close the modal that asks to confirm the shipping postcode; it blocks every click."""
         if not self.is_visible(self.ship_to_dialog):
@@ -59,3 +77,9 @@ class Header(BasePage):
         self.log.info("Dismissing the ship-to dialog")
         self.click(self.ship_to_dismiss)
         self.ship_to_dialog.wait_for(state="hidden")
+
+
+def _badge_count(text: str) -> int:
+    """Badge text is a count, possibly capped like "99+"."""
+    digits = "".join(char for char in text.strip() if char.isdigit())
+    return int(digits) if digits else 0
