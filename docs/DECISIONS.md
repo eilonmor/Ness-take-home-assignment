@@ -313,3 +313,44 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 - ✅ `pytest tests/e2e/test_e2e_cart_budget.py` runs the whole spec once per data row and leaves an Allure report, a JUnit file and an HTML report.
 - ✅ A reviewer without the Allure CLI can still open `reports/report.html`.
 - ❌ `pytest-html` is one more **required** dependency: `pytest.ini` always passes `--html`/`--css`, so pytest stops with "unrecognized arguments" without it. Its report has no steps and only the failure evidence; the step screenshots and the cart check are in Allure only.
+
+## ADR-12 — Bot protection experiment: hide the automation flags (kept, off by default)
+
+**Context.** eBay's bot protection is the main obstacle to checking that the project works and to debugging it. The code under test is the framework, not eBay's defenses, yet:
+- Every headless run (the `ci` profile) gets "Error Page | eBay", so the pipeline can never show a green run.
+- A few runs in a row get rate-limited even when headed. A fix can't be tried right after a failure: the retry fails at the home page with `BotChallengeError` and never reaches the code that was changed.
+- A failure caused by eBay's protection hides real failures (a changed selector, a broken step) behind the same bot page.
+
+ADR-6 decided not to work around the protection. On a separate branch (`try-to-fix-bot-bot-protection`) we measured whether hiding the usual automation markers would make headless runs usable, so the decision rests on data instead of an assumption.
+
+**What was tried** (headless, one run each, spaced out, from an Israeli IP):
+
+| Setup | Result |
+|---|---|
+| Bundled Chromium + `STEALTH=true`: `--disable-blink-features=AutomationControlled`, no `--enable-automation`, `navigator.webdriver` hidden, `HeadlessChrome` removed from the real UA, full Chromium instead of the headless shell | Bot page |
+| Installed Chrome (`BROWSER_CHANNEL=chrome`) | Bot page |
+| Installed Edge (`BROWSER_CHANNEL=msedge`) | Bot page |
+| Firefox | Bot page |
+| WebKit | Home page once, then the bot page on all 4 smoke tests a minute later |
+
+The trace of the stealth run shows why: the **first** request, `GET https://www.ebay.com/`, already returns **403**, before any page script runs. eBay decides from the IP, the TLS/HTTP fingerprint and the request headers, which script-level patches (this module, or `playwright-stealth`, which patches the same JavaScript properties) cannot change. The WebKit pass is not reproducible: either eBay's scoring varies from request to request, or the burst of test runs had rate-limited the IP. Telling the two apart needs more traffic against eBay, which is not worth it.
+
+**Decision.**
+- Keep the code as an **opt-in** setting, `browser.stealth` (env `STEALTH`, default `false`), in [core/stealth.py](../core/stealth.py), Chromium only. When it is off, the launch and context options are exactly the ones from before (guarded by [tests/unit/test_stealth.py](../tests/unit/test_stealth.py)). It hides automation markers only; it never solves or bypasses a CAPTCHA, and a bot page is still reported by `ensure_not_blocked()`.
+- Add `browser.channel` (env `BROWSER_CHANNEL`): drive an installed Chrome/Edge instead of the bundled Chromium. Useful on its own, e.g. to reproduce a bug in the browser a user actually has.
+- `base.yaml` now matches where the runs come from: `timezone_id: Asia/Jerusalem` and `currency: ILS` (eBay shows ILS from Israel anyway, ADR-7). `locale` stays `en-US` so the UI stays English.
+- ADR-6 stands: run headed, keep traffic low, fail fast with a screenshot when blocked.
+
+**Alternatives.**
+
+| Option | Why not |
+|---|---|
+| Go further: copy a real browser's TLS/HTTP2 fingerprint, rewrite client-hint headers, residential proxies | Real evasion work against the site's protection, out of scope (MISSION_PLAN §5.1), and brittle: it breaks when eBay updates its checks. |
+| Add `playwright-stealth` | Same layer as `core/stealth.py`: page scripts. The block happens on the first request, before they run. |
+| Delete the experiment | The measurements and the toggle let anyone check the result again in one command (`STEALTH=true HEADLESS=true pytest -m smoke`) instead of repeating the work. |
+
+**Consequences.**
+- ✅ Headless being blocked is now measured, not assumed: on the first request, whatever the browser. It supports the "run headed" rule of ADR-6.
+- ✅ `BROWSER_CHANNEL` and the Israel timezone/currency are useful without stealth (no currency-mismatch warning anymore).
+- ❌ The repo now has code meant to hide automation, which ADR-6 rejects as a solution. It stays off by default and is documented here as a failed experiment, not as a way to run the tests.
+- ❌ CI stays red against live eBay. Proving the framework works still needs a headed run on a desktop, and the offline unit tests remain the reliable check for selectors and logic.

@@ -1,7 +1,7 @@
 # Ness-take-home-assignment
 
 E2E scenario on eBay with Playwright + Python: search → filter by price → add to cart → assert the cart total.
-Spec and stage tracker: [MISSION_PLAN.md](MISSION_PLAN.md). Design decisions: [docs/DECISIONS.md](docs/DECISIONS.md).
+Spec and stage tracker: [MISSION_PLAN.md](MISSION_PLAN.md). Design decisions: [docs/DECISIONS.md](docs/DECISIONS.md). Bug exercise (review of the AI-generated snippet): [ReadMeAIBugs.md](ReadMeAIBugs.md).
 
 ## Contents
 
@@ -11,12 +11,14 @@ Spec and stage tracker: [MISSION_PLAN.md](MISSION_PLAN.md). Design decisions: [d
 - [Running the tests](#running-the-tests)
   - [Troubleshooting](#troubleshooting)
 - [Reports](#reports)
+- [Architecture](#architecture)
 - [Limitations](#limitations)
   - [Login: guest session by default](#login-guest-session-by-default)
   - [Bot detection](#bot-detection)
   - [Search and prices](#search-and-prices)
   - [Add to cart](#add-to-cart)
   - [Cart total check](#cart-total-check)
+  - [Dynamic pages and locators](#dynamic-pages-and-locators)
 
 ## Prerequisites
 
@@ -67,6 +69,8 @@ Settings are layered; each layer overrides the one before it:
 | `HEADLESS` | `false` | Show or hide the browser |
 | `SLOW_MO` | `250` | Delay between actions (ms) |
 | `BROWSER` | `firefox` | `chromium`, `firefox` or `webkit` (install the extra browsers with `python -m playwright install firefox webkit`) |
+| `BROWSER_CHANNEL` | `chrome` | Drive an installed Chrome (`chrome`) or Edge (`msedge`) instead of the bundled Chromium |
+| `STEALTH` | `true` | Experimental, off by default: hide Chromium's automation flags. Does **not** get past eBay's bot check (see [Bot detection](#bot-detection)) |
 | `BASE_URL` | `https://www.ebay.co.uk` | Another eBay site |
 | `TRACE` | `on` | Keep the Playwright trace of passing runs too (default: only failed runs) |
 | `RANDOM_SEED` | `12345` | Replay the random variant picks of an earlier run (the seed is logged) |
@@ -125,6 +129,57 @@ Every `pytest` run writes all of its output under `reports/` (git-ignored). The 
 - **HTML:** pass/fail per test with filters, the captured log of each test, the same environment settings, and for failed tests the failure screenshot and a link to the trace. It has no steps; use Allure for those.
 - **JUnit XML:** pass/fail and failure messages only.
 
+## Architecture
+
+A self-developed Page Object Model in layers. Each layer uses only the layers below it:
+
+```
+tests/  →  services/  →  pages/  →  components/  →  core/ + utils/
+```
+
+| Layer | What it holds | Rule |
+|---|---|---|
+| `tests/` | pytest tests and fixtures | Calls services and page objects. No raw selectors. |
+| `services/` | Business flows: the three spec functions plus session setup | Composes pages. Adds Allure steps and evidence. |
+| `pages/` | One class per eBay page | Knows a page's locators and actions. No business rules. |
+| `components/` | UI parts shared by pages or too large for one page (header, price filter, paging, variant pickers, cart dialog) | Same base class as the pages. |
+| `core/` | Settings, base page, logger, data loader, exceptions, constants | Framework plumbing with no flow logic. `constants.py` also holds the selectors the pages use (ADR-9). |
+| `utils/` | Small helpers with no browser state (price parser, URL helpers, report attachments, tracing) | Unit-tested offline. |
+
+```
+config/                 settings profiles: base.yaml + dev.yaml / ci.yaml
+data/search_cases.yaml  test data, one test per row
+core/
+  config.py             base.yaml → <profile>.yaml → env vars, into frozen dataclasses
+  base_page.py          BasePage: navigation, waits, bot-check detection, screenshots, logging
+  constants.py          every fixed value: selectors/XPaths, URL paths, env var names, messages
+  data_loader.py        reads and validates the data file into SearchCase rows
+  exceptions.py         BotChallengeError, LoginError, AddToCartError, CartBudgetExceededError, ...
+  logger.py             console + reports/logs/run.log
+pages/                  HomePage, LoginPage, SearchResultsPage, ItemPage, CartPage
+components/             Header, PriceFilter, Pagination, VariantSelector, AddedToCartDialog
+services/
+  auth_service.py       AuthService.start_session(): guest (default) or real sign-in
+  search_service.py     search_items_by_name_under_price()        spec 5.2
+  cart_service.py       add_items_to_cart(), assert_cart_total_not_exceeds()   spec 5.3, 5.4
+utils/                  price_parser, urls, attachments, html_report, tracing, files
+tests/
+  conftest.py           browser/context/page fixtures, failure evidence, data-driven parametrize
+  e2e/                  live tests against eBay (smoke + scenario steps + full scenario)
+  unit/                 offline tests: price parser, XPaths on copied markup, config, data loader, ...
+docs/DECISIONS.md       design decisions (ADR-1 … ADR-11)
+```
+
+**How a run fits together:**
+1. `tests/conftest.py` loads the settings once per session and starts one browser. Each test gets a fresh context (empty cookies and cart), and its screenshots and trace are saved if it fails.
+2. Any test that takes a `search_case` argument runs once per row of the data file.
+3. The full scenario ([tests/e2e/test_e2e_cart_budget.py](tests/e2e/test_e2e_cart_budget.py)) follows spec 5.5: `user_session` (guest) → `SearchService.search_items_by_name_under_price()` → `CartService.add_items_to_cart()` → `CartService.assert_cart_total_not_exceeds()`.
+
+**Design choices worth knowing** (details in [docs/DECISIONS.md](docs/DECISIONS.md)):
+- Own fixtures instead of `pytest-playwright`, so the profile controls the browser and not CLI flags (ADR-1, ADR-2). `--headed` / `--browser` therefore do not exist: use `HEADLESS` / `BROWSER`.
+- Site failures (bot check, item that cannot be added) raise their own exceptions. A budget overrun raises `CartBudgetExceededError`, an `AssertionError`, so the report tells "the site got in the way" apart from "the check failed".
+- Fixed values in one `constants.py`, per-run values in the YAML profiles (ADR-9).
+
 ## Limitations
 
 ### Login: guest session by default
@@ -136,8 +191,10 @@ eBay protects sign-in with captcha and bot checks, so runs start as a **guest by
 ### Bot detection
 - Headless runs are blocked by eBay ("Error Page" / "Security Measure" captcha). Run headed: the default `dev` profile, or `HEADLESS=false`.
 - Many runs in a short time are rate-limited even when headed. The run then fails fast with `eBay served a bot check (...)` and a screenshot. Wait a few minutes before retrying.
+- This makes it hard to check that the project works and to debug it: CI (headless) can't show a green run against live eBay, and a retry right after a failure is often blocked before it reaches the code under test. The offline unit tests (`pytest tests/unit`) cover the selectors and logic without eBay.
+- Hiding the automation flags doesn't help. With `STEALTH=true`, installed Chrome/Edge, Firefox or WebKit, headless runs still get the bot page: eBay rejects the very first request (HTTP 403), before any page script runs.
 
-Design rationale: [docs/DECISIONS.md](docs/DECISIONS.md) ADR-6.
+Design rationale: [docs/DECISIONS.md](docs/DECISIONS.md) ADR-6, and the experiment in ADR-12.
 
 ### Search and prices
 - **Currency follows your location.** eBay shows prices in the visitor's currency (e.g. ILS from Israel), whatever the profile's `currency` says. `max_price` in [data/search_cases.yaml](data/search_cases.yaml) is compared in the displayed currency, and a mismatch is logged as a warning.
@@ -165,3 +222,9 @@ Design rationale: [docs/DECISIONS.md](docs/DECISIONS.md) ADR-8.
 - **Trace:** kept on failure by default; run with `TRACE=on` to keep it for a passing run too. The cart steps are grouped as "Cart page" in `playwright show-trace`.
 
 Design rationale: [docs/DECISIONS.md](docs/DECISIONS.md) ADR-10.
+
+### Dynamic pages and locators
+- **Tied to eBay's current markup.** The locators target eBay's layout as of October 2026: `s-card` result cards, the current item-page variant dropdowns, and the cart's `data-test-id` hooks. eBay changes and A/B-tests its pages, so a redesign can break a locator. All of them live in [core/constants.py](core/constants.py), so a fix is made in one place.
+- **No hard waits.** The framework waits for elements and page states (Playwright auto-waiting, `expect(...)`) and never sleeps for a fixed time. A page slower than the profile's `timeouts` still fails. The `ci` profile has longer timeouts.
+- **Live data.** Results, prices and stock change from run to run, so two runs of the same data row add different items. A row can also find fewer than `limit` items. The scenario then checks the cart against the number it did add. If it finds none, the full scenario fails, because there is nothing left to check in the cart. The spec allows 0 results, so `search_items_by_name_under_price()` itself still returns an empty list.
+- **Only verified against `ebay.com`, from Israel.** Other eBay sites (`BASE_URL`) and other regions may show different layouts, currencies or dialogs.

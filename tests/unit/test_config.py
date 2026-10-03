@@ -9,7 +9,7 @@ from core.config import PROJECT_ROOT, available_profiles, load_settings
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("ENV", "BASE_URL", "BROWSER", "HEADLESS", "SLOW_MO", "EBAY_GUEST", "EBAY_USERNAME", "EBAY_PASSWORD", "RANDOM_SEED", "TRACE"):
+    for name in ("ENV", "BASE_URL", "BROWSER", "HEADLESS", "SLOW_MO", "EBAY_GUEST", "EBAY_USERNAME", "EBAY_PASSWORD", "RANDOM_SEED", "TRACE", "STEALTH", "BROWSER_CHANNEL"):
         monkeypatch.delenv(name, raising=False)
     # A developer's local .env must not leak into (or out of) these tests.
     monkeypatch.setattr(config, "load_dotenv", lambda *args, **kwargs: False)
@@ -232,4 +232,54 @@ def test_trace_env_variable_is_validated(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("TRACE", "always")
 
     with pytest.raises(ValueError, match="artifacts.trace must be one of"):
+        load_settings("ci")
+
+
+def test_stealth_is_off_by_default() -> None:
+    settings = load_settings("dev")
+
+    assert settings.browser.stealth is False
+    assert settings.browser.channel is None
+
+
+def test_stealth_and_channel_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STEALTH", "true")
+    monkeypatch.setenv("BROWSER_CHANNEL", "Chrome")
+
+    settings = load_settings("ci")
+
+    assert settings.browser.stealth is True
+    assert settings.browser.channel == "chrome"
+
+
+def test_channel_from_profile_is_normalized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    shutil.copy(config.PROFILES_DIR / "base.yaml", tmp_path / "base.yaml")
+    (tmp_path / "edge.yaml").write_text("browser:\n  channel: ' MSEdge '\n", encoding="utf-8")
+    monkeypatch.setattr(config, "PROFILES_DIR", tmp_path)
+
+    assert load_settings("edge").browser.channel == "msedge"
+
+
+@pytest.mark.parametrize(
+    ("profile", "message"),
+    [
+        ("browser:\n  channel: chrom\n", "browser.channel must be one of"),
+        ("browser:\n  channel: true\n", "browser.channel must be one of"),
+        ("browser:\n  name: firefox\n  channel: chrome\n", "browser.channel 'chrome' needs browser.name chromium"),
+    ],
+)
+def test_channel_is_validated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, profile: str, message: str) -> None:
+    shutil.copy(config.PROFILES_DIR / "base.yaml", tmp_path / "base.yaml")
+    (tmp_path / "broken.yaml").write_text(profile, encoding="utf-8")
+    monkeypatch.setattr(config, "PROFILES_DIR", tmp_path)
+
+    with pytest.raises(ValueError, match=message):
+        load_settings("broken")
+
+
+def test_channel_env_variable_rejects_non_chromium_browser(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BROWSER", "firefox")
+    monkeypatch.setenv("BROWSER_CHANNEL", "chrome")
+
+    with pytest.raises(ValueError, match="needs browser.name chromium"):
         load_settings("ci")

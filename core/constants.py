@@ -55,6 +55,12 @@ class CartTotalLine(StrEnum):
 
 BROWSERS = tuple(browser.value for browser in BrowserName)
 TRACE_MODES = tuple(mode.value for mode in TraceMode)
+# Playwright channels for browser.channel (Chromium only); null = the bundled browser.
+BROWSER_CHANNELS = (
+    "chromium",
+    "chrome", "chrome-beta", "chrome-dev", "chrome-canary",
+    "msedge", "msedge-beta", "msedge-dev", "msedge-canary",
+)
 CART_TOTAL_LINES = tuple(line.value for line in CartTotalLine)
 TRUE_VALUES = ("1", "true", "yes", "on")
 FALSE_VALUES = ("0", "false", "no", "off")
@@ -71,6 +77,8 @@ class EnvVar:
     GUEST = "EBAY_GUEST"
     RANDOM_SEED = "RANDOM_SEED"
     TRACE = "TRACE"
+    STEALTH = "STEALTH"
+    BROWSER_CHANNEL = "BROWSER_CHANNEL"
     USERNAME = "EBAY_USERNAME"
     PASSWORD = "EBAY_PASSWORD"
 
@@ -400,3 +408,23 @@ class AssertMessage:
         "({budget_per_item:g} per item x {items_count} items), over by {excess:,.2f}"
     )
     CART_LINES = "Cart has {actual} lines, expected {expected}"
+
+
+# --- Browser hardening (core/stealth.py, experimental branch) ----------------
+
+
+class Stealth:
+    """Chromium launch/context tweaks applied when ``browser.stealth`` is on."""
+
+    # Stops Blink from setting navigator.webdriver=true and the related automation hooks.
+    LAUNCH_ARGS = ("--disable-blink-features=AutomationControlled",)
+    # Playwright adds --enable-automation by default (infobar + automation flag); drop it.
+    IGNORE_DEFAULT_ARGS = ("--enable-automation",)
+    # Headless Chromium advertises itself in the UA; the real version string stays.
+    HEADLESS_UA_TOKEN = "HeadlessChrome"
+    HEADED_UA_TOKEN = "Chrome"
+    # Belt and braces for navigator.webdriver, in case the launch flag is ignored
+    # (e.g. a channel/version that still sets it). Runs before any page script.
+    INIT_SCRIPT = """
+Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => undefined, configurable: true });
+"""

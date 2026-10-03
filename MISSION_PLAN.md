@@ -154,7 +154,7 @@ Login is required, but a **guest / stub** login is allowed (document it as a lim
 
 > ✅ **Milestone 7:** one command gives a green run and an Allure report with steps, screenshots and trace.
 
-### Stage 8 — Bug Exercise: `ReadMeAIBugs.md` (~20 min)
+### Stage 8 — Bug Exercise: `ReadMeAIBugs.md` (~20 min) ✅ DONE
 Static review of the AI-generated snippet: find **at least 3 bugs**, explain each in detail, and propose fixed code.
 
 Bugs to cover:
@@ -165,15 +165,19 @@ Bugs to cover:
 5. **Weak locators:** the generic `.button` can match many elements (strict mode violation) or the wrong one. Fix: `page.get_by_role("button", name="Search")`.
 6. **Wrong target:** `https://example.com` has no `#search` box, so the test cannot work. The URL is also hard-coded instead of coming from config.
 
-- [ ] Include the full corrected snippet.
+- [x] Include the full corrected snippet.
+  - [ReadMeAIBugs.md](ReadMeAIBugs.md): 8 issues (4 main, 4 minor), each with an explanation and fix, plus the full corrected version (pytest-playwright `page` fixture) and a summary table.
 
 > ✅ **Milestone 8:** `ReadMeAIBugs.md` lists ≥ 3 bugs, each with an explanation and fixed lines.
 
-### Stage 9 — README & Delivery (~20 min)
+### Stage 9 — README & Delivery (~20 min) — docs done, merge + fresh-clone check pending
 - [x] README: prerequisites, installation, run commands (per ENV/profile), how to generate/open reports.
-- [ ] Short architecture explanation (folder tree + layers).
-- [ ] Limitations/assumptions: guest login stub, captcha/bot detection (not handled, out of scope), regional pricing/currency, dynamic DOM, sponsored items, shipping not included in the price filter.
+- [x] Short architecture explanation (folder tree + layers).
+  - README "Architecture": layer table, annotated folder tree, how a run fits together, links to the ADRs. README also links [ReadMeAIBugs.md](ReadMeAIBugs.md).
+- [x] Limitations/assumptions: guest login stub, captcha/bot detection (not handled, out of scope), regional pricing/currency, dynamic DOM, sponsored items, shipping not included in the price filter.
+  - Dynamic DOM was the missing one: new "Dynamic pages and locators" section (markup-bound locators, no hard waits, live data, only verified on ebay.com from Israel).
 - [ ] Push to GitHub and confirm the repo is accessible.
+  - The repo is public (https://github.com/eilonmor/Ness-take-home-assignment, checked without signing in). Still to do: merge this stage into `main`.
 
 > ✅ **Milestone 9:** fresh clone → follow the README → tests run and the report opens.
 
