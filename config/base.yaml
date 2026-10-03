@@ -31,6 +31,10 @@ data:
 search:
   max_pages: 5          # paging limit when collecting items under a price
 
+cart:
+  random_seed: null     # int for reproducible variant choices; null = new seed per run (logged). Env: RANDOM_SEED
+  variant_attempts: 3   # random variant combinations tried per item before it fails
+
 # eBay sign-in is behind captcha/bot checks, so runs are guest by default.
 # Real login is opt-in from .env: EBAY_GUEST=false + EBAY_USERNAME / EBAY_PASSWORD.
 # Credentials are never stored in profiles.

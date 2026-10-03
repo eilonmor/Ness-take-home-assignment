@@ -9,7 +9,7 @@ from core.config import PROJECT_ROOT, available_profiles, load_settings
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("ENV", "BASE_URL", "BROWSER", "HEADLESS", "SLOW_MO", "EBAY_GUEST", "EBAY_USERNAME", "EBAY_PASSWORD"):
+    for name in ("ENV", "BASE_URL", "BROWSER", "HEADLESS", "SLOW_MO", "EBAY_GUEST", "EBAY_USERNAME", "EBAY_PASSWORD", "RANDOM_SEED"):
         monkeypatch.delenv(name, raising=False)
     # A developer's local .env must not leak into (or out of) these tests.
     monkeypatch.setattr(config, "load_dotenv", lambda *args, **kwargs: False)
@@ -179,4 +179,42 @@ def test_search_page_limit_must_be_a_positive_integer(tmp_path: Path, monkeypatc
     monkeypatch.setattr(config, "PROFILES_DIR", tmp_path)
 
     with pytest.raises(ValueError, match="search.max_pages must be a positive integer"):
+        load_settings("broken")
+
+
+def test_cart_defaults_come_from_profile() -> None:
+    cart = load_settings("ci").cart
+
+    assert cart.random_seed is None
+    assert cart.variant_attempts == 3
+
+
+def test_random_seed_env_variable_overrides_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RANDOM_SEED", "1234")
+
+    assert load_settings("ci").cart.random_seed == 1234
+
+
+def test_random_seed_env_variable_must_be_an_integer(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RANDOM_SEED", "abc")
+
+    with pytest.raises(ValueError, match="RANDOM_SEED must be an integer"):
+        load_settings("ci")
+
+
+@pytest.mark.parametrize(
+    ("profile", "message"),
+    [
+        ("cart:\n  random_seed: 'x'\n", "cart.random_seed must be an integer or null"),
+        ("cart:\n  variant_attempts: 0\n", "cart.variant_attempts must be a positive integer"),
+    ],
+)
+def test_cart_settings_are_validated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, profile: str, message: str
+) -> None:
+    shutil.copy(config.PROFILES_DIR / "base.yaml", tmp_path / "base.yaml")
+    (tmp_path / "broken.yaml").write_text(profile, encoding="utf-8")
+    monkeypatch.setattr(config, "PROFILES_DIR", tmp_path)
+
+    with pytest.raises(ValueError, match=message):
         load_settings("broken")

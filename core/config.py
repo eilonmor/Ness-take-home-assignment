@@ -3,7 +3,7 @@
 Resolution order (later wins):
     config/base.yaml  ->  config/<ENV>.yaml  ->  environment variables
                                                 (BASE_URL, BROWSER, HEADLESS, SLOW_MO,
-                                                 EBAY_GUEST)
+                                                 EBAY_GUEST, RANDOM_SEED)
 
 The profile is chosen by the ``--env`` pytest option, else the ``ENV``
 environment variable (also read from ``.env``), else ``dev``.
@@ -22,14 +22,20 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-PROFILES_DIR = PROJECT_ROOT / "config"
-BASE_PROFILE = "base"
-DEFAULT_ENV = "dev"
-TRACE_MODES = ("on", "off", "retain-on-failure")
-BROWSERS = ("chromium", "firefox", "webkit")
-TRUE_VALUES = ("1", "true", "yes", "on")
-FALSE_VALUES = ("0", "false", "no", "off")
+from core.constants import (
+    BASE_PROFILE,
+    BROWSERS,
+    DEFAULT_ENV,
+    DOTENV_FILE,
+    FALSE_VALUES,
+    PROFILE_SUFFIX,
+    PROFILES_DIR,
+    PROJECT_ROOT,
+    TRACE_MODES,
+    TRUE_VALUES,
+    ArtifactFiles,
+    EnvVar,
+)
 
 
 @dataclass(frozen=True)
@@ -56,15 +62,15 @@ class ArtifactSettings:
 
     @property
     def screenshots_dir(self) -> Path:
-        return self.dir / "screenshots"
+        return self.dir / ArtifactFiles.SCREENSHOTS_DIR
 
     @property
     def traces_dir(self) -> Path:
-        return self.dir / "traces"
+        return self.dir / ArtifactFiles.TRACES_DIR
 
     @property
     def logs_dir(self) -> Path:
-        return self.dir / "logs"
+        return self.dir / ArtifactFiles.LOGS_DIR
 
 
 @dataclass(frozen=True)
@@ -77,6 +83,15 @@ class SearchSettings:
     # Upper bound for paging in search_items_by_name_under_price: stops a
     # query with few cheap items from crawling (and being rate-limited).
     max_pages: int
+
+
+@dataclass(frozen=True)
+class CartSettings:
+    # Seed for the random variant choices; None picks a new one per run
+    # (it is logged, so a run can be replayed with RANDOM_SEED=<seed>).
+    random_seed: int | None
+    # Random variant combinations to try per item before giving up on it.
+    variant_attempts: int
 
 
 @dataclass(frozen=True)
@@ -100,25 +115,26 @@ class Settings:
     artifacts: ArtifactSettings
     data: DataSettings
     search: SearchSettings
+    cart: CartSettings
     auth: AuthSettings
 
 
 def load_settings(env: str | None = None) -> Settings:
     """Build Settings for ``env`` (falls back to $ENV, then ``dev``)."""
-    load_dotenv(PROJECT_ROOT / ".env")
-    env = (env or _env("ENV") or DEFAULT_ENV).strip().lower()
+    load_dotenv(DOTENV_FILE)
+    env = (env or _env(EnvVar.ENV) or DEFAULT_ENV).strip().lower()
 
-    profile_path = PROFILES_DIR / f"{env}.yaml"
+    profile_path = PROFILES_DIR / f"{env}{PROFILE_SUFFIX}"
     if env == BASE_PROFILE or not profile_path.is_file():
         raise ValueError(f"Unknown ENV '{env}'. Available profiles: {', '.join(available_profiles())}")
 
-    raw = _deep_merge(_read_yaml(PROFILES_DIR / f"{BASE_PROFILE}.yaml"), _read_yaml(profile_path))
+    raw = _deep_merge(_read_yaml(PROFILES_DIR / f"{BASE_PROFILE}{PROFILE_SUFFIX}"), _read_yaml(profile_path))
     raw = _deep_merge(raw, _env_overrides())
     return _build_settings(env, raw)
 
 
 def available_profiles() -> list[str]:
-    return sorted(path.stem for path in PROFILES_DIR.glob("*.yaml") if path.stem != BASE_PROFILE)
+    return sorted(path.stem for path in PROFILES_DIR.glob(f"*{PROFILE_SUFFIX}") if path.stem != BASE_PROFILE)
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -144,18 +160,20 @@ def _env_overrides() -> dict[str, Any]:
     """
     overrides: dict[str, Any] = {}
     browser: dict[str, Any] = {}
-    if base_url := _env("BASE_URL"):
+    if base_url := _env(EnvVar.BASE_URL):
         overrides["base_url"] = base_url
-    if browser_name := _env("BROWSER"):
+    if browser_name := _env(EnvVar.BROWSER):
         browser["name"] = browser_name.lower()
-    if (headless := _env_bool("HEADLESS")) is not None:
+    if (headless := _env_bool(EnvVar.HEADLESS)) is not None:
         browser["headless"] = headless
-    if slow_mo := _env("SLOW_MO"):
+    if slow_mo := _env(EnvVar.SLOW_MO):
         browser["slow_mo_ms"] = int(slow_mo)
     if browser:
         overrides["browser"] = browser
-    if (guest := _env_bool("EBAY_GUEST")) is not None:
+    if (guest := _env_bool(EnvVar.GUEST)) is not None:
         overrides["auth"] = {"guest": guest}
+    if random_seed := _env(EnvVar.RANDOM_SEED):
+        overrides["cart"] = {"random_seed": _parse_int(random_seed, EnvVar.RANDOM_SEED)}
     return overrides
 
 
@@ -173,6 +191,13 @@ def _env_bool(name: str) -> bool | None:
         return _parse_bool(value)
     except ValueError as error:
         raise ValueError(f"{name}: {error}") from None
+
+
+def _parse_int(value: str, name: str) -> int:
+    try:
+        return int(value)
+    except ValueError:
+        raise ValueError(f"{name} must be an integer, got '{value}'") from None
 
 
 def _parse_bool(value: str) -> bool:
@@ -219,6 +244,7 @@ def _build_settings(env: str, raw: dict[str, Any]) -> Settings:
         ),
         data=DataSettings(search_cases=_project_path(raw["data"]["search_cases"])),
         search=_build_search(raw["search"]),
+        cart=_build_cart(raw["cart"]),
         auth=_build_auth(raw["auth"]),
     )
 
@@ -230,12 +256,23 @@ def _build_search(search: dict[str, Any]) -> SearchSettings:
     return SearchSettings(max_pages=max_pages)
 
 
+def _build_cart(cart: dict[str, Any]) -> CartSettings:
+    seed, attempts = cart["random_seed"], cart["variant_attempts"]
+    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
+        raise ValueError(f"cart.random_seed must be an integer or null, got {seed!r}")
+    if isinstance(attempts, bool) or not isinstance(attempts, int) or attempts < 1:
+        raise ValueError(f"cart.variant_attempts must be a positive integer, got {attempts!r}")
+    return CartSettings(random_seed=seed, variant_attempts=attempts)
+
+
 def _build_auth(auth: dict[str, Any]) -> AuthSettings:
     """Guest flag from the profile/EBAY_GUEST; credentials only from the environment."""
     guest = _profile_bool(auth["guest"], "auth.guest")
-    username, password = _env("EBAY_USERNAME"), _env("EBAY_PASSWORD")
+    username, password = _env(EnvVar.USERNAME), _env(EnvVar.PASSWORD)
     if not guest and not (username and password):
-        raise ValueError("Real login (EBAY_GUEST=false) needs EBAY_USERNAME and EBAY_PASSWORD in the environment or .env")
+        raise ValueError(
+            f"Real login ({EnvVar.GUEST}=false) needs {EnvVar.USERNAME} and {EnvVar.PASSWORD} in the environment or .env"
+        )
     return AuthSettings(guest=guest, username=username, password=password)
 
 

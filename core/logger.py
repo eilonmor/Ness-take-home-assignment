@@ -5,25 +5,23 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-ROOT_LOGGER_NAME = "ness"
-LOG_FORMAT = "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"
-LOG_FILE_NAME = "run.log"
+from core.constants import Logging
 
 
-def configure_logging(log_dir: Path, level: str = "INFO") -> Path:
+def configure_logging(log_dir: Path, level: str = Logging.DEFAULT_LEVEL) -> Path:
     """Attach console + file handlers to the project root logger (idempotent).
 
     Returns the path of the log file.
     """
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / LOG_FILE_NAME
+    log_file = log_dir / Logging.FILE_NAME
 
-    root = logging.getLogger(ROOT_LOGGER_NAME)
+    root = logging.getLogger(Logging.ROOT_LOGGER)
     root.setLevel(level)
     if root.handlers:
         return log_file
 
-    formatter = logging.Formatter(LOG_FORMAT)
+    formatter = logging.Formatter(Logging.FORMAT)
 
     console = logging.StreamHandler()
     console.setFormatter(formatter)
@@ -38,4 +36,4 @@ def configure_logging(log_dir: Path, level: str = "INFO") -> Path:
 
 def get_logger(name: str) -> logging.Logger:
     """Child of the project root logger, e.g. ``ness.SearchResultsPage``."""
-    return logging.getLogger(f"{ROOT_LOGGER_NAME}.{name}")
+    return logging.getLogger(f"{Logging.ROOT_LOGGER}.{name}")

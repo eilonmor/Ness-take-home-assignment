@@ -8,6 +8,8 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from components.header import Header
 from core.base_page import BasePage
 from core.config import Settings
+from core.constants import EnvVar
+from core.constants import LoginPageLocators as Locators
 from core.exceptions import LoginError
 
 
@@ -16,12 +18,11 @@ class LoginPage(BasePage):
 
     def __init__(self, page: Page, settings: Settings) -> None:
         super().__init__(page, settings)
-        self.username_input = page.locator("#userid")
-        self.continue_button = page.locator("#signin-continue-btn")
-        self.password_input = page.locator("#pass")
-        self.sign_in_button = page.locator("#sgnBt")
-        # Inline error under the field, e.g. "We couldn't find this eBay account."
-        self.error_message = page.locator("#signin-error-msg")
+        self.username_input = page.locator(Locators.USERNAME_INPUT)
+        self.continue_button = page.locator(Locators.CONTINUE_BUTTON)
+        self.password_input = page.locator(Locators.PASSWORD_INPUT)
+        self.sign_in_button = page.locator(Locators.SIGN_IN_BUTTON)
+        self.error_message = page.locator(Locators.ERROR_MESSAGE)
         # Present once eBay redirects back to www.ebay.com; not on the sign-in page.
         self.home_header = Header(page, settings).identity
 
@@ -45,7 +46,7 @@ class LoginPage(BasePage):
             self.ensure_not_blocked()
             raise LoginError(
                 f"Sign-in stopped after the {step} step at {self.page.url} "
-                "(likely an extra check such as 2FA or a passkey prompt). Use guest mode: EBAY_GUEST=true."
+                f"(likely an extra check such as 2FA or a passkey prompt). Use guest mode: {EnvVar.GUEST}=true."
             ) from None
         if self.error_message.is_visible():
             raise LoginError(f"eBay rejected the {step}: {self.error_message.inner_text().strip()}")

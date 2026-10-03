@@ -182,3 +182,72 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 - ❌ The locators target eBay's current `s-card` layout. The older `s-item` layout, which eBay may still serve in some A/B buckets, is not supported. All selectors are constants in one module, so a layout change is a local edit.
 - ❌ `max_price: 220` means 220 in whatever currency the visitor sees. Running from another country changes the meaning of the data rows. This is documented in the README.
 - ❌ Shipping is not part of the price check (the spec compares the item price).
+
+---
+
+## ADR-8 — Add to cart: one tab per item, variants picked in order from a seeded RNG
+
+**Context.** Spec 5.3 asks to open each URL, pick random **available** variant values, click "Add to cart", go back to the search, and save a screenshot and log per item. Probing live item pages (2026-10) showed:
+- Variants are eBay's custom `listbox-button` widgets, one `.x-sku` per dimension inside `[data-testid=x-msku-evo]`, not native `<select>`s. Values are `[role=option][data-sku-value-name]`. Out-of-stock values stay in the list with `aria-disabled="true"` and "(Out of stock)" in the text.
+- Dimensions depend on each other: picking Color "Heather Cardinal" **removes** sizes XS and 4XL from the Size list.
+- "Add to cart" (`[data-testid=x-atc-action] a`) opens an in-page overlay: a spinner, then "Added to cart" with the item details. The page URL does not change. The link's `href` is a real `cart.payments.ebay.com/sc/add?...` URL, followed when the click lands before the page's scripts take over.
+- Clicking "Add to cart" with a dimension unselected adds nothing and shows "Please select a Size" (`.error-text`) under it.
+- The header cart badge (`.gh-cart .gh-badge`) updates in place after an add.
+- The quantity box is disabled when only one unit is for sale ("Last one").
+
+**Decision.**
+- Flow in [services/cart_service.py](../services/cart_service.py): for each URL, open a **new tab** in the same context → `ItemPage.open_listing()` → `select_random_variants()` → `keep_quantity_at_one()` → `add_to_cart()` → wait for the cart badge to go up → screenshot (with the "Added to cart" overlay showing) + log → close the tab and bring the search tab to the front. That is "go back to the search tab": the results page was never left.
+- [components/variant_selector.py](../components/variant_selector.py) picks dimensions **in page order** and reads a dimension's available options only after the previous pick, so each pick sees what eBay left in stock for the values chosen so far. Disabled values are never candidates.
+- Randomness comes from `random.Random(seed)`. The seed is `cart.random_seed` in the profile / `RANDOM_SEED`, or a fresh random one, and is always logged and attached to the report, so a failing combination can be replayed.
+- Quantity stays at **1**. The spec mentions quantity among the variants, but Stage 6 checks `total <= budget_per_item * items_count`; a random quantity would break that comparison.
+- An add counts as done only when eBay confirms it: the overlay details appear **and** the cart badge goes up. A visible "Please select …" error raises `VariantSelectionError`; the page is reloaded and another random combination is tried, up to `cart.variant_attempts` (profile, default 3). Anything else (no "Add to cart" button, no confirmation) raises `AddToCartError` at once. The run stops at the first item that cannot be added, because the cart total check is only meaningful when every item is in.
+- Before clicking "Add to cart" the page waits for `load`. If eBay still follows the link to the cart page, that also counts as added. For this reason the item's title and (variant) price are read **before** the click: after it, the tab may no longer be the item page.
+- The cart count to beat is read once on the search tab (fully loaded) and then carried from item to item. Reading it in each new item tab could catch the header before the badge renders and report 0.
+
+**Alternatives.**
+
+| Option | Why not |
+|---|---|
+| Same tab, `page.go_back()` after each item | Variant picks rewrite the URL (`?var=…`), so the number of history steps back to the results is not fixed. The search page would also reload every time, a bigger rate-limit footprint. |
+| Click the result card, which opens the item in a new tab | Needs the card on screen for each URL. The spec's input is a URL list (5.3 takes `urls`), which may come from several result pages. |
+| Pick all dimensions up front from the initial option lists | Misses the dependency between dimensions: Red + S can be in the list before Red is chosen and gone after. |
+| Unseeded `random.choice` | Random failures could not be reproduced. |
+| Random quantity | Breaks the budget × item count check of Stage 6; listings with one unit do not allow it anyway. |
+| Skip items that cannot be added and go on | The cart check would pass with fewer items than `items_count` and hide the problem. |
+
+**Consequences.**
+- ✅ Every item in the cart is confirmed twice (overlay + badge), with a screenshot of the confirmation in the report.
+- ✅ The service flow is tested offline with stubbed pages ([tests/unit/test_cart_service.py](../tests/unit/test_cart_service.py)): retries up to `variant_attempts`, no retry for other errors, every item tab closed, cart count carried over.
+- ✅ The variant logic is tested offline: [tests/unit/test_variant_selector.py](../tests/unit/test_variant_selector.py) runs it against copied listbox markup, with a small script that mimics eBay's behaviour (open, pick, drop out-of-stock sizes).
+- ✅ The search tab is untouched, so the search could go on from where it stopped.
+- ❌ Only the `listbox-button` variant widget is supported. Native `<select>` pickers (older layout) and image swatches were not seen on current pages and are not handled; such a listing fails with "eBay asks to select: …".
+- ❌ A "See all options" layout was not found on live pages during probing, so it is not handled.
+- ❌ One bad listing (ended between search and add, sold out) fails the whole scenario by design.
+
+---
+
+## ADR-9 — Fixed values in one `core/constants.py`, run-time values in the profiles
+
+**Context.** Selectors, URL paths and query parameters, screenshot and attachment names, env var names, default waits and assertion messages were spread as literals across pages, components, services and tests. Some were module constants (`CART_BADGE`, `MAX_PRICE_PARAM`, `CARD_XPATHS`), others inline strings. A change in eBay's markup or a renamed env var meant hunting through several layers.
+
+**Decision.**
+- Every value that is **fixed** (set by eBay's markup and URLs, by the spec, or by framework conventions) lives in [core/constants.py](../core/constants.py), grouped by the module that uses it: `HeaderLocators`, `ItemPageLocators`, `SearchResultsXPaths`, `QueryParam`, `Endpoints`, `EnvVar`, `Waits`, `ScreenshotName`, `AssertMessage`, ...
+- Groups are plain namespace classes with `UPPER_SNAKE` attributes, so a call site reads `Locators.ADD_TO_CART_BUTTON` without `.value`. Closed sets that are validated (`BrowserName`, `TraceMode`) are `StrEnum`s; they compare equal to the plain strings read from YAML.
+- Messages with parameters are `str.format` templates (`AssertMessage.NO_ITEMS_FOUND.format(query=..., max_price=...)`).
+- Values that **change per run** stay in the YAML profiles (ADR-2): base URL, timeouts, browser, data file, paging cap.
+- The module lives in `core/` (the bottom layer) and imports nothing from the project, so every layer can use it without cycles.
+
+**Alternatives.**
+
+| Option | Why not |
+|---|---|
+| Keep locators next to each page object | The classic POM layout and fine on its own, but the values were split between module constants, `__init__` bodies and inline strings, and tests, services and config each had their own literals as well. |
+| One `Enum` per group | Every use would need `.value`, and Playwright and `str.format` would get enum members rather than strings. |
+| Put selectors in YAML too | Selectors are not something a run should change; loading them from data would lose IDE navigation and import-time errors. |
+| Use the constants inside unit tests | A unit test that builds its expected value from the same constant cannot catch a wrong constant. Unit tests keep their own literal inputs and expectations. |
+
+**Consequences.**
+- ✅ A layout change on eBay is an edit to one group in one file; pages and components only hold structure and behaviour.
+- ✅ Env var names, screenshot names and report labels are consistent everywhere they are used.
+- ❌ Opening a page object no longer shows its selectors inline; jump to the `*Locators` group (one click in an IDE).
+- ❌ Log, exception and Allure step texts stay inline on purpose: they are prose, not values, and are easier to read at the call site.

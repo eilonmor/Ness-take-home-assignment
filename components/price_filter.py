@@ -8,9 +8,9 @@ from playwright.sync_api import Page
 
 from core.base_page import BasePage
 from core.config import Settings
+from core.constants import PriceFilterLocators as Locators
+from core.constants import QueryParam
 from utils.urls import query_param
-
-MAX_PRICE_PARAM = "_udhi"
 
 
 class PriceFilter(BasePage):
@@ -22,10 +22,9 @@ class PriceFilter(BasePage):
 
     def __init__(self, page: Page, settings: Settings) -> None:
         super().__init__(page, settings)
-        max_input = "input[placeholder^='Max']"
-        self.section = page.locator(".su-price-filter__section").filter(has=page.locator(max_input)).first
-        self.max_input = self.section.locator(max_input)
-        self.submit_button = self.section.locator("button.su-textrange__submit-button")
+        self.section = page.locator(Locators.SECTION).filter(has=page.locator(Locators.MAX_INPUT)).first
+        self.max_input = self.section.locator(Locators.MAX_INPUT)
+        self.submit_button = self.section.locator(Locators.SUBMIT_BUTTON)
 
     def is_available(self) -> bool:
         return self.is_visible(self.max_input)
@@ -37,5 +36,5 @@ class PriceFilter(BasePage):
         self.log.info("Applying the price filter: max %s", value)
         self.fill(self.max_input, value)
         # eBay navigates a moment after the click, to a URL with _udhi=<value>.
-        with self.expect_navigation(lambda url: query_param(url, MAX_PRICE_PARAM) == value):
+        with self.expect_navigation(lambda url: query_param(url, QueryParam.MAX_PRICE) == value):
             self.click(self.submit_button)
