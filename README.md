@@ -9,6 +9,7 @@ Spec and stage tracker: [MISSION_PLAN.md](MISSION_PLAN.md). Design decisions: [d
 - [Setup](#setup)
 - [Configuration](#configuration)
 - [Running the tests](#running-the-tests)
+  - [Troubleshooting](#troubleshooting)
 - [Reports](#reports)
 - [Limitations](#limitations)
   - [Login: guest session by default](#login-guest-session-by-default)
@@ -89,17 +90,34 @@ pytest                                     # everything
 - A single data row: `pytest "tests/e2e/test_e2e_cart_budget.py::test_cart_total_not_exceeds_budget[shoes-under-220]"`.
 - The live tests open a real browser on eBay. Running many of them back to back can trigger eBay's rate limiting. The run then stops with `BotChallengeError`; wait a few minutes (sometimes longer) before retrying.
 
+### Troubleshooting
+
+**`pytest : The term 'pytest' is not recognized as the name of a cmdlet, function, script file, or operable program.`**
+
+pytest is installed inside the project's virtual environment (`.venv`), which is not active in this terminal. Activate it, then run the tests again:
+
+```powershell
+.venv\Scripts\activate
+pytest tests/e2e/test_e2e_cart_budget.py
+```
+
+When it is active, the prompt starts with `(.venv)`. Activation lasts for that terminal only, so repeat it in every new terminal. On macOS / Linux: `source .venv/bin/activate`.
+
+Two related cases:
+- **`.venv\Scripts\activate` fails with "running scripts is disabled on this system"**: PowerShell blocks scripts by default. Allow them for your user once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then activate again.
+- **No activation at all:** call the venv's Python directly, e.g. `.venv\Scripts\python -m pytest tests/e2e/test_e2e_cart_budget.py`.
+
 ## Reports
 
-Every `pytest` run writes all of its output under `reports/` (git-ignored). Each run **replaces** the previous reports, so copy them elsewhere if you want to keep them.
+Every `pytest` run writes all of its output under `reports/` (git-ignored). The Allure results, `report.html`, `junit.xml` and `run.log` are **replaced** by each run. Screenshots and traces are **kept**: their file names start with a timestamp (`20261003-150113-249_...`), so files from earlier runs pile up next to the new ones. Match them to a run by that timestamp, or empty `reports/screenshots/` and `reports/traces/` before a run you want to keep separate.
 
 | Report | Location | Created | How to open |
 |---|---|---|---|
 | **Allure** (main report) | `reports/allure-results/` | Every run. The folder is emptied at the start of the run (`--clean-alluredir`). | `allure serve reports/allure-results`: builds the report and opens it in the browser. For a static copy: `allure generate reports/allure-results -o reports/allure-report --clean`, then `allure open reports/allure-report`. |
 | **HTML** | `reports/report.html` | Every run, at the end of the run. | Open the file in a browser (`start reports\report.html` on Windows). It is one self-contained file, with no tool needed. Do not use VS Code's preview: it blocks the report's scripts. |
 | **JUnit XML** | `reports/junit.xml` | Every run, at the end of the run. | For CI dashboards (Jenkins, GitHub Actions, Azure DevOps). |
-| Screenshots | `reports/screenshots/*.png` | Step screenshots on every run (session ready, each search results page, each item added, the cart page). A full-page screenshot of every open tab when a test fails. | Any image viewer; also attached to the Allure report. |
-| Playwright traces | `reports/traces/*.zip` | When a test fails (default), or for every test with `TRACE=on`. | `playwright show-trace reports/traces/<file>.zip`, or drag the file onto [trace.playwright.dev](https://trace.playwright.dev). |
+| Screenshots | `reports/screenshots/*.png` | Step screenshots on every run (session ready, each search results page, each item added, the cart page). A full-page screenshot of every open tab when a test fails. Kept across runs (timestamped names). | Any image viewer; also attached to the Allure report. |
+| Playwright traces | `reports/traces/*.zip` | When a test fails (default), or for every test with `TRACE=on`. Kept across runs (timestamped names). | `playwright show-trace reports/traces/<file>.zip`, or drag the file onto [trace.playwright.dev](https://trace.playwright.dev). |
 | Log | `reports/logs/run.log` | Every run (rewritten each time). | Any text editor. |
 
 **What each report shows:**

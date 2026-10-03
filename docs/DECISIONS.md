@@ -299,7 +299,7 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
   - `junit.xml` — for CI dashboards (suite name `ness-ebay-e2e`).
   - `report.html` — pytest-html, self-contained, opens in any browser without the Allure CLI. Restyled by [assets/html_report.css](../assets/html_report.css) (`--css`, inlined into the file): cards, outcome pills, colored row edges, dark log panel, light/dark mode. CSS only, over pytest-html's own class names, so no template is overridden; system fonts only, since the file is opened offline.
 - `pytest_sessionfinish` writes `allure-results/environment.properties` (profile, base URL, browser, headless, session, cart total line, trace mode, data file), so the Allure report shows which settings produced it. The same values go into the HTML report's "Environment" table (`pytest_metadata`).
-- In the HTML report, a failed test's row embeds the failure screenshots and links to the saved trace ([utils/html_report.py](../utils/html_report.py)). The hooks are optional, so the suite still runs without pytest-html.
+- In the HTML report, a failed test's row embeds the failure screenshots and links to the saved trace ([utils/html_report.py](../utils/html_report.py)). The evidence is only created in the context fixture's teardown, so it is attached to the teardown report; pytest-html merges the extras of every phase into the test's row from 4.2 (4.1.x drops them), hence `pytest-html>=4.2`.
 
 **Alternatives.**
 
@@ -312,4 +312,4 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 **Consequences.**
 - ✅ `pytest tests/e2e/test_e2e_cart_budget.py` runs the whole spec once per data row and leaves an Allure report, a JUnit file and an HTML report.
 - ✅ A reviewer without the Allure CLI can still open `reports/report.html`.
-- ❌ `pytest-html` is one more dependency. Its report has no steps and only the failure evidence; the step screenshots and the cart check are in Allure only.
+- ❌ `pytest-html` is one more **required** dependency: `pytest.ini` always passes `--html`/`--css`, so pytest stops with "unrecognized arguments" without it. Its report has no steps and only the failure evidence; the step screenshots and the cart check are in Allure only.
