@@ -2,15 +2,20 @@
 # overrides only the keys it lists; env vars (BASE_URL, HEADLESS, SLOW_MO)
 # override both.
 base_url: https://www.ebay.com
-locale: en-US
-timezone_id: America/New_York
-currency: USD
+# Match where the runs come from (an Israeli IP): eBay scores a timezone that
+# contradicts the IP, and it shows prices in ILS from Israel anyway (ADR-7).
+locale: en-US           # English UI; also sets Accept-Language / navigator.language
+timezone_id: Asia/Jerusalem
+currency: ILS
 log_level: INFO
 
 browser:
   name: chromium        # chromium | firefox | webkit
   headless: true
   slow_mo_ms: 0
+  # Experimental (bot-protection branch). Env: STEALTH, BROWSER_CHANNEL.
+  stealth: false        # Chromium only: hide automation flags (core/stealth.py)
+  channel: null         # null = bundled Chromium | chrome | msedge (installed browser)
   viewport:
     width: 1440
     height: 900

@@ -28,7 +28,7 @@ allure serve reports/allure-results      # needs the separate Allure CLI; pytest
 playwright show-trace reports/traces/<file>.zip
 ```
 
-`pytest-playwright` is intentionally **not** used (ADR-1): `--headed`, `--browser`, `--slowmo` don't exist. Use env overrides instead: `HEADLESS=false`, `BROWSER=firefox`, `SLOW_MO=250`, `BASE_URL=...`, `TRACE=on` (keep the trace of a passing run).
+`pytest-playwright` is intentionally **not** used (ADR-1): `--headed`, `--browser`, `--slowmo` don't exist. Use env overrides instead: `HEADLESS=false`, `BROWSER=firefox`, `SLOW_MO=250`, `BASE_URL=...`, `TRACE=on` (keep the trace of a passing run), `BROWSER_CHANNEL=chrome|msedge` (installed browser). `STEALTH=true` is a kept, off-by-default experiment that does not get past eBay's bot check (ADR-12) — don't extend it.
 
 ## Architecture
 
