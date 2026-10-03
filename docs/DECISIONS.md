@@ -201,7 +201,8 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 - Randomness comes from `random.Random(seed)`. The seed is `cart.random_seed` in the profile / `RANDOM_SEED`, or a fresh random one, and is always logged and attached to the report, so a failing combination can be replayed.
 - Quantity stays at **1**. The spec mentions quantity among the variants, but Stage 6 checks `total <= budget_per_item * items_count`; a random quantity would break that comparison.
 - An add counts as done only when eBay confirms it: the overlay details appear **and** the cart badge goes up. A visible "Please select …" error raises `VariantSelectionError`; the page is reloaded and another random combination is tried, up to `cart.variant_attempts` (profile, default 3). Anything else (no "Add to cart" button, no confirmation) raises `AddToCartError` at once. The run stops at the first item that cannot be added, because the cart total check is only meaningful when every item is in.
-- Before clicking "Add to cart" the page waits for `load`. If eBay still follows the link to the cart page, that also counts as added.
+- Before clicking "Add to cart" the page waits for `load`. If eBay still follows the link to the cart page, that also counts as added. For this reason the item's title and (variant) price are read **before** the click: after it, the tab may no longer be the item page.
+- The cart count to beat is read once on the search tab (fully loaded) and then carried from item to item. Reading it in each new item tab could catch the header before the badge renders and report 0.
 
 **Alternatives.**
 
@@ -216,6 +217,7 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 
 **Consequences.**
 - ✅ Every item in the cart is confirmed twice (overlay + badge), with a screenshot of the confirmation in the report.
+- ✅ The service flow is tested offline with stubbed pages ([tests/unit/test_cart_service.py](../tests/unit/test_cart_service.py)): retries up to `variant_attempts`, no retry for other errors, every item tab closed, cart count carried over.
 - ✅ The variant logic is tested offline: [tests/unit/test_variant_selector.py](../tests/unit/test_variant_selector.py) runs it against copied listbox markup, with a small script that mimics eBay's behaviour (open, pick, drop out-of-stock sizes).
 - ✅ The search tab is untouched, so the search could go on from where it stopped.
 - ❌ Only the `listbox-button` variant widget is supported. Native `<select>` pickers (older layout) and image swatches were not seen on current pages and are not handled; such a listing fails with "eBay asks to select: …".

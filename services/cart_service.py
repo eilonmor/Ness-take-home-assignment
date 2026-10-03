@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import allure
 from playwright.sync_api import Page
 
+from components.header import Header
 from components.variant_selector import VariantChoice
 from core.config import Settings
 from core.constants import SEED_UPPER_BOUND, AttachmentName, EnvVar, ScreenshotName
@@ -57,20 +58,25 @@ class CartService:
         cart check (budget * item count) is only meaningful when every item is in.
         """
         self.log.info("Adding %d items to the cart (variant seed %d)", len(urls), self.seed)
+        added: list[CartItem] = []
         with allure.step(f"Add {len(urls)} items to the cart (variant seed {self.seed})"):
-            added = [self._add_item(url, number, len(urls)) for number, url in enumerate(urls, 1)]
+            # Read on the search tab, which is fully loaded; a new item tab may
+            # not have rendered the badge yet and would report 0.
+            cart_count = Header(self.page, self.settings).cart_count()
+            for number, url in enumerate(urls, 1):
+                added.append(self._add_item(url, number, len(urls), cart_count))
+                cart_count = added[-1].cart_count
         attach_text(_summary(added, self.seed), AttachmentName.CART_ITEMS)
         return added
 
-    def _add_item(self, url: str, number: int, total: int) -> CartItem:
+    def _add_item(self, url: str, number: int, total: int, cart_count_before: int) -> CartItem:
         with allure.step(f"Add item {number}/{total} to the cart: {url}"):
-            item = ItemPage(self.page.context.new_page(), self.settings)
+            item = self._open_item_tab()
             try:
                 item.open_listing(url)
-                cart_before = item.header.cart_count()
-                variants = self._add_with_random_variants(item, url)
-                cart_count = item.header.wait_for_cart_count_above(cart_before)
-                added = CartItem(url, item.title_text(), item.price_text(), tuple(variants), cart_count)
+                variants, title, price = self._add_with_random_variants(item, url)
+                cart_count = item.header.wait_for_cart_count_above(cart_count_before)
+                added = CartItem(url, title, price, tuple(variants), cart_count)
                 item.take_screenshot(ScreenshotName.CART_ITEM.format(number=number))
                 self.log.info("Added item %d/%d (cart now %d): %s", number, total, cart_count, added)
                 item.added_dialog.close()
@@ -83,7 +89,10 @@ class CartService:
                 item.page.close()
                 self._back_to_search()
 
-    def _add_with_random_variants(self, item: ItemPage, url: str) -> list[VariantChoice]:
+    def _open_item_tab(self) -> ItemPage:
+        return ItemPage(self.page.context.new_page(), self.settings)
+
+    def _add_with_random_variants(self, item: ItemPage, url: str) -> tuple[list[VariantChoice], str, str]:
         """Retry with a new random combination while eBay rejects the variants (last error is raised)."""
         attempts = self.settings.cart.variant_attempts
         for attempt in range(1, attempts):
@@ -94,11 +103,14 @@ class CartService:
                 item.open_listing(url)  # start again from a page with nothing selected
         return self._select_variants_and_add(item)
 
-    def _select_variants_and_add(self, item: ItemPage) -> list[VariantChoice]:
+    def _select_variants_and_add(self, item: ItemPage) -> tuple[list[VariantChoice], str, str]:
+        """Returns the variants, title and price; the last two are read before the click,
+        because "Add to cart" may leave the item page (eBay can open the cart page instead)."""
         variants = item.select_random_variants(self.rng)
         item.keep_quantity_at_one()
+        title, price = item.title_text(), item.price_text()
         self.log.info("eBay confirmed: %s", item.add_to_cart())
-        return variants
+        return variants, title, price
 
     def _failure_screenshot(self, item: ItemPage, number: int) -> None:
         try:
