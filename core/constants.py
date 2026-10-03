@@ -86,6 +86,8 @@ class ArtifactFiles:
     # Allure wants the extension without the dot.
     TRACE_ATTACHMENT_EXTENSION = "zip"
     FAILURE_SCREENSHOT = "{run_id}_failure_{index}"
+    # Read by Allure for the report's "Environment" widget.
+    ALLURE_ENVIRONMENT = "environment.properties"
 
 
 # --- Logging, files, data (core/logger.py, utils/files.py, core/data_loader.py)
@@ -341,9 +343,32 @@ class AttachmentName:
     CART_CHECK = "Cart total vs. budget"
 
 
+class HtmlReport:
+    TITLE = "Ness eBay E2E report"
+    # pytest-html stores --html under this option name.
+    PATH_OPTION = "htmlpath"
+
+
 class AllureFeature:
     SEARCH = "Search"
     CART = "Cart"
+    SCENARIO = "Full scenario"
+
+
+class AllureTitle:
+    # Formatted by allure-pytest with the test's parameters.
+    CART_BUDGET = (
+        "Search '{search_case.query}' <= {search_case.max_price:g}, add to cart, "
+        "cart total <= {search_case.budget:g} per item"
+    )
+
+
+class ScenarioStep:
+    """Top-level Allure steps of the full scenario (spec 5.5); the services add the detail inside."""
+
+    SEARCH = "1. Search items under the price (spec 5.2)"
+    ADD_TO_CART = "2. Add {count} items to the cart (spec 5.3)"
+    ASSERT_TOTAL = "3. Assert the cart total is within the budget (spec 5.4)"
 
 
 # --- Tests: pytest wiring, expected values, assertion messages ---------------

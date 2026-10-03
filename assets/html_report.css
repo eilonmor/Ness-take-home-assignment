@@ -1,0 +1,405 @@
+/* Theme for reports/report.html, appended after pytest-html's own style.css
+   (pytest.ini: --css). Only restyles pytest-html's markup; no template changes.
+   System fonts only: the report is self-contained and opened offline. */
+
+:root {
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-muted: #f8f9fc;
+  --border: #e3e7ef;
+  --text: #1b2333;
+  --text-muted: #667085;
+  --accent: #3b5bdb;
+  --passed: #16a34a;
+  --passed-bg: #e8f7ee;
+  --failed: #dc2626;
+  --failed-bg: #fdecec;
+  --skipped: #d97706;
+  --skipped-bg: #fdf3e2;
+  --log-bg: #0f172a;
+  --log-text: #e2e8f0;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 1px 3px rgb(16 24 40 / 10%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b1020;
+    --surface: #141a2e;
+    --surface-muted: #1a2138;
+    --border: #262f4a;
+    --text: #e6e9f2;
+    --text-muted: #98a2b8;
+    --accent: #7c93ff;
+    --passed-bg: rgb(22 163 74 / 15%);
+    --failed-bg: rgb(220 38 38 / 15%);
+    --skipped-bg: rgb(217 119 6 / 15%);
+    --log-bg: #070b16;
+    --shadow: none;
+  }
+}
+
+/* --- Page ------------------------------------------------------------------ */
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+}
+
+h1#title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin: 0 0 4px;
+  padding-left: 14px;
+  border-left: 5px solid var(--accent);
+}
+
+h2 {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
+
+p {
+  color: var(--text-muted);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* --- Environment ------------------------------------------------------------- */
+
+#environment-header {
+  margin-top: 28px;
+}
+
+#environment {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  min-width: 480px;
+}
+
+#environment td {
+  padding: 8px 16px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+#environment tr:last-child td {
+  border-bottom: none;
+}
+
+#environment tr:nth-child(odd) {
+  background: var(--surface-muted);
+}
+
+#environment td:first-child {
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* --- Summary and filters ------------------------------------------------------- */
+
+.summary {
+  margin-top: 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px 24px;
+}
+
+.summary__spacer {
+  display: none;
+}
+
+/* pytest-html nests an (empty by default) "additional-summary summary" box. */
+.summary .summary {
+  margin: 0;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: none;
+}
+
+.run-count {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+
+p.filter {
+  margin: 0 0 14px;
+  font-size: 13px;
+}
+
+.controls {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.filters {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filters input {
+  accent-color: var(--accent);
+  margin: 0 0 0 6px;
+  cursor: pointer;
+}
+
+.filters span {
+  font-weight: 600;
+  font-size: 13px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+}
+
+.filters input:disabled + span {
+  opacity: 0.45;
+}
+
+.filters span.passed {
+  color: var(--passed);
+  background: var(--passed-bg) !important;
+  border-color: transparent !important;
+}
+
+.filters span.failed,
+.filters span.error,
+.filters span.xpassed {
+  color: var(--failed);
+  background: var(--failed-bg) !important;
+  border-color: transparent !important;
+}
+
+.filters span.skipped,
+.filters span.xfailed,
+.filters span.rerun {
+  color: var(--skipped);
+  background: var(--skipped-bg) !important;
+  border-color: transparent !important;
+}
+
+.collapse button,
+.filters button {
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.collapse button:hover,
+.filters button:hover {
+  color: var(--accent);
+  background: var(--surface-muted);
+}
+
+/* --- Results table --------------------------------------------------------------- */
+
+#results-table {
+  margin-top: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+}
+
+#results-table th {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 12px 16px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+}
+
+#results-table td {
+  padding: 12px 16px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+}
+
+#results-table tbody:last-child tr:last-child td {
+  border-bottom: none;
+}
+
+.collapsible:hover td {
+  background: var(--surface-muted);
+}
+
+.collapsible td:not(.col-links):hover::after {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Outcome as a pill, and a colored edge on the whole row. */
+.col-result {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.passed .col-result,
+.failed .col-result,
+.error .col-result,
+.xpassed .col-result,
+.skipped .col-result,
+.xfailed .col-result,
+.rerun .col-result {
+  color: inherit;
+}
+
+.passed .collapsible .col-result { box-shadow: inset 4px 0 0 var(--passed); color: var(--passed); }
+.failed .collapsible .col-result,
+.error .collapsible .col-result,
+.xpassed .collapsible .col-result { box-shadow: inset 4px 0 0 var(--failed); color: var(--failed); }
+.skipped .collapsible .col-result,
+.xfailed .collapsible .col-result,
+.rerun .collapsible .col-result { box-shadow: inset 4px 0 0 var(--skipped); color: var(--skipped); }
+
+.col-testId {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.col-duration {
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.col-links__extra {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+}
+
+.col-links__extra:hover {
+  text-decoration: none;
+  border-color: var(--accent);
+}
+
+.sortable.asc:after,
+.sortable.desc:after {
+  border-width: 5px;
+  border-top-color: var(--accent);
+  border-bottom-color: var(--accent);
+  bottom: 0;
+  top: -2px;
+  display: inline-block;
+}
+
+/* --- Details row: screenshots and log ----------------------------------------------- */
+
+.extras-row td.extra {
+  background: var(--surface-muted);
+  padding: 16px;
+}
+
+div.media {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  width: 360px;
+  height: 270px;
+  margin: 0 0 12px 16px;
+}
+
+.media-container {
+  height: 220px;
+}
+
+.media-container__viewport img {
+  object-fit: contain;
+}
+
+.media-container__nav--left,
+.media-container__nav--right {
+  color: var(--text-muted);
+  font-size: 18px;
+}
+
+.media__name,
+.media__counter {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.logwrapper {
+  background: var(--log-bg);
+  border-radius: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.logwrapper .logexpander {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.logwrapper .logexpander:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.logwrapper .log {
+  border: none;
+  color: var(--log-text);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  padding: 14px 96px 14px 16px;
+}
+
+.logwrapper .log .error {
+  color: #f87171;
+  font-weight: 600;
+}

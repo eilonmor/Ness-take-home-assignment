@@ -1,7 +1,129 @@
 # Ness-take-home-assignment
 
 E2E scenario on eBay with Playwright + Python: search → filter by price → add to cart → assert the cart total.
-The full README (setup, run commands, reports) is written in Stage 9; see [MISSION_PLAN.md](MISSION_PLAN.md).
+Spec and stage tracker: [MISSION_PLAN.md](MISSION_PLAN.md). Design decisions: [docs/DECISIONS.md](docs/DECISIONS.md).
+
+## Contents
+
+- [Prerequisites](#prerequisites)
+- [Setup](#setup)
+- [Configuration](#configuration)
+- [Running the tests](#running-the-tests)
+  - [Troubleshooting](#troubleshooting)
+- [Reports](#reports)
+- [Limitations](#limitations)
+  - [Login: guest session by default](#login-guest-session-by-default)
+  - [Bot detection](#bot-detection)
+  - [Search and prices](#search-and-prices)
+  - [Add to cart](#add-to-cart)
+  - [Cart total check](#cart-total-check)
+
+## Prerequisites
+
+| Tool | Version | Required? | Needed for |
+|---|---|---|---|
+| Python | 3.11+ (developed on 3.14) | Required | Running the tests (`typing.Self`) |
+| Git | any | Required | Cloning the repo |
+| JDK | 21+ | Optional | Running the Allure CLI (it is a Java app). Set `JAVA_HOME` to the JDK folder. Install with `winget install Microsoft.OpenJDK.21` (Windows) or `brew install openjdk@21` (macOS). |
+| Allure CLI | 2.x | Optional | Viewing the Allure report (`allure serve`). Install with `scoop install allure` (Windows), `brew install allure` (macOS) or `npm install -g allure-commandline`. |
+
+The tests run without the two optional tools: every run still writes the Allure results, and the HTML and JUnit reports need neither.
+
+A desktop session with a visible browser is also needed: eBay blocks headless browsers (see [Bot detection](#bot-detection)).
+
+## Setup
+
+```bash
+git clone https://github.com/eilonmor/Ness-take-home-assignment.git
+cd Ness-take-home-assignment
+
+python -m venv .venv
+.venv\Scripts\activate          # Windows (PowerShell)
+source .venv/bin/activate       # macOS / Linux
+
+pip install -r requirements.txt
+python -m playwright install chromium
+
+cp .env.example .env            # optional: local overrides, git-ignored
+pytest --collect-only           # sanity check: validates the profile, .env and data file
+```
+
+## Configuration
+
+Settings are layered; each layer overrides the one before it:
+
+1. [config/base.yaml](config/base.yaml): defaults for every profile (base URL, browser, timeouts, artifacts, search and cart options).
+2. `config/<profile>.yaml`: the keys a profile changes.
+   - `dev` (default): headed, `slow_mo` 100 ms, DEBUG logs.
+   - `ci`: headless, longer timeouts. eBay will most likely block it (see [Bot detection](#bot-detection)).
+3. Environment variables, from the shell or from `.env`.
+
+**Choosing a profile:** `pytest --env ci`, or `ENV=ci` in the environment / `.env`. Without either, `dev` is used.
+
+**One-off overrides** (environment or `.env`):
+
+| Variable | Example | Effect |
+|---|---|---|
+| `HEADLESS` | `false` | Show or hide the browser |
+| `SLOW_MO` | `250` | Delay between actions (ms) |
+| `BROWSER` | `firefox` | `chromium`, `firefox` or `webkit` (install the extra browsers with `python -m playwright install firefox webkit`) |
+| `BASE_URL` | `https://www.ebay.co.uk` | Another eBay site |
+| `TRACE` | `on` | Keep the Playwright trace of passing runs too (default: only failed runs) |
+| `RANDOM_SEED` | `12345` | Replay the random variant picks of an earlier run (the seed is logged) |
+| `EBAY_GUEST`, `EBAY_USERNAME`, `EBAY_PASSWORD` | | Real sign-in instead of guest (see [Login](#login-guest-session-by-default)). Credentials are read only from the environment, never from profiles. |
+
+PowerShell syntax: `$env:HEADLESS="false"; pytest`. Bash: `HEADLESS=false pytest`.
+
+**Test data:** [data/search_cases.yaml](data/search_cases.yaml). Each row is one test case: `query`, `max_price`, optional `limit` (default 5), `budget_per_item` (default `max_price`) and `id` (test name in the reports). Adding a row adds a test, with no code change.
+
+## Running the tests
+
+```bash
+pytest tests/e2e/test_e2e_cart_budget.py   # the full scenario: search → add to cart → cart total check, once per data row
+pytest tests/e2e                           # every live test (smoke + scenario steps)
+pytest -m e2e                              # only the scenario tests (search, add to cart, cart total)
+pytest -m smoke                            # quick checks: home page, session, search page
+pytest tests/unit                          # offline unit tests, no browser or eBay needed
+pytest                                     # everything
+```
+
+- A single data row: `pytest "tests/e2e/test_e2e_cart_budget.py::test_cart_total_not_exceeds_budget[shoes-under-220]"`.
+- The live tests open a real browser on eBay. Running many of them back to back can trigger eBay's rate limiting. The run then stops with `BotChallengeError`; wait a few minutes (sometimes longer) before retrying.
+
+### Troubleshooting
+
+**`pytest : The term 'pytest' is not recognized as the name of a cmdlet, function, script file, or operable program.`**
+
+pytest is installed inside the project's virtual environment (`.venv`), which is not active in this terminal. Activate it, then run the tests again:
+
+```powershell
+.venv\Scripts\activate
+pytest tests/e2e/test_e2e_cart_budget.py
+```
+
+When it is active, the prompt starts with `(.venv)`. Activation lasts for that terminal only, so repeat it in every new terminal. On macOS / Linux: `source .venv/bin/activate`.
+
+Two related cases:
+- **`.venv\Scripts\activate` fails with "running scripts is disabled on this system"**: PowerShell blocks scripts by default. Allow them for your user once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then activate again.
+- **No activation at all:** call the venv's Python directly, e.g. `.venv\Scripts\python -m pytest tests/e2e/test_e2e_cart_budget.py`.
+
+## Reports
+
+Every `pytest` run writes all of its output under `reports/` (git-ignored). The Allure results, `report.html`, `junit.xml` and `run.log` are **replaced** by each run. Screenshots and traces are **kept**: their file names start with a timestamp (`20261003-150113-249_...`), so files from earlier runs pile up next to the new ones. Match them to a run by that timestamp, or empty `reports/screenshots/` and `reports/traces/` before a run you want to keep separate.
+
+| Report | Location | Created | How to open |
+|---|---|---|---|
+| **Allure** (main report) | `reports/allure-results/` | Every run. The folder is emptied at the start of the run (`--clean-alluredir`). | `allure serve reports/allure-results`: builds the report and opens it in the browser. For a static copy: `allure generate reports/allure-results -o reports/allure-report --clean`, then `allure open reports/allure-report`. |
+| **HTML** | `reports/report.html` | Every run, at the end of the run. | Open the file in a browser (`start reports\report.html` on Windows). It is one self-contained file, with no tool needed. Do not use VS Code's preview: it blocks the report's scripts. |
+| **JUnit XML** | `reports/junit.xml` | Every run, at the end of the run. | For CI dashboards (Jenkins, GitHub Actions, Azure DevOps). |
+| Screenshots | `reports/screenshots/*.png` | Step screenshots on every run (session ready, each search results page, each item added, the cart page). A full-page screenshot of every open tab when a test fails. Kept across runs (timestamped names). | Any image viewer; also attached to the Allure report. |
+| Playwright traces | `reports/traces/*.zip` | When a test fails (default), or for every test with `TRACE=on`. Kept across runs (timestamped names). | `playwright show-trace reports/traces/<file>.zip`, or drag the file onto [trace.playwright.dev](https://trace.playwright.dev). |
+| Log | `reports/logs/run.log` | Every run (rewritten each time). | Any text editor. |
+
+**What each report shows:**
+- **Allure:** one entry per test and data row, with numbered steps (search → add to cart → cart total) and the services' sub-steps. Inside them: the step screenshots, the list of items found, the items added (with the variant seed), and the "Cart total vs. budget" attachment. Failed tests also carry the failure screenshots and the trace. The **Environment** widget shows the run's settings (profile, base URL, browser, headless, session, trace mode, data file).
+- **HTML:** pass/fail per test with filters, the captured log of each test, the same environment settings, and for failed tests the failure screenshot and a link to the trace. It has no steps; use Allure for those.
+- **JUnit XML:** pass/fail and failure messages only.
 
 ## Limitations
 

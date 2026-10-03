@@ -287,3 +287,29 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 - ✅ A failing check reads as actual vs. budget in the pytest output and the Allure report, next to the cart screenshot.
 - ❌ With the default `items` line, shipping costs never fail the check. This is documented in the README.
 - ❌ The cart page was probed as a guest with one listing that does not ship to Israel (no shipping row). The subtotal row is read the same way, but its shipping content was not seen live.
+
+## ADR-11 — Full scenario test and three reports per run
+
+**Context.** Stage 7 asks for one e2e test that runs search → add → assert from the data file with Allure steps, and for Allure results plus JUnit XML (and optionally pytest-html). Stage 6 already had `tests/e2e/test_cart_total.py` running the same three calls. Every live run costs eBay requests, and bursts of runs get a bot check (ADR-6). The Allure report needs the separate Allure CLI (Java), which a reviewer may not have installed.
+
+**Decision.**
+- The Stage 6 test became the scenario test: `tests/e2e/test_e2e_cart_budget.py` (renamed with `git mv`, kept under `tests/e2e/` with the other live tests instead of the plan's `tests/` root). It wraps the spec's three calls in numbered top-level Allure steps (`ScenarioStep`); the services' own steps, screenshots and attachments nest inside them. Spec 5.1 (session) runs in the `user_session` fixture, so Allure shows it under "Set up". The Allure title is built from the data row (`AllureTitle.CART_BUDGET`), and the test is tagged with feature "Full scenario" and severity critical.
+- `pytest.ini` writes three reports on every run, all under `reports/`:
+  - `allure-results/` — the main report: steps, screenshots, cart check, trace. `allure serve reports/allure-results`.
+  - `junit.xml` — for CI dashboards (suite name `ness-ebay-e2e`).
+  - `report.html` — pytest-html, self-contained, opens in any browser without the Allure CLI. Restyled by [assets/html_report.css](../assets/html_report.css) (`--css`, inlined into the file): cards, outcome pills, colored row edges, dark log panel, light/dark mode. CSS only, over pytest-html's own class names, so no template is overridden; system fonts only, since the file is opened offline.
+- `pytest_sessionfinish` writes `allure-results/environment.properties` (profile, base URL, browser, headless, session, cart total line, trace mode, data file), so the Allure report shows which settings produced it. The same values go into the HTML report's "Environment" table (`pytest_metadata`).
+- In the HTML report, a failed test's row embeds the failure screenshots and links to the saved trace ([utils/html_report.py](../utils/html_report.py)). The evidence is only created in the context fixture's teardown, so it is attached to the teardown report; pytest-html merges the extras of every phase into the test's row from 4.2 (4.1.x drops them), hence `pytest-html>=4.2`.
+
+**Alternatives.**
+
+| Option | Why not |
+|---|---|
+| Keep `test_cart_total.py` and add the scenario test next to it | Two tests running the same live flow per data row: double the eBay traffic and twice the bot-check risk, for no extra coverage. |
+| Pass `--junitxml`/`--html` only in CI | The milestone is "one command gives the reports". Writing them always costs under a second. |
+| Link the failure screenshots instead of embedding them | The report would break when moved or attached alone. Screenshots are only taken on failure, so embedding keeps the file small. The trace (several MB) is linked instead. |
+
+**Consequences.**
+- ✅ `pytest tests/e2e/test_e2e_cart_budget.py` runs the whole spec once per data row and leaves an Allure report, a JUnit file and an HTML report.
+- ✅ A reviewer without the Allure CLI can still open `reports/report.html`.
+- ❌ `pytest-html` is one more **required** dependency: `pytest.ini` always passes `--html`/`--css`, so pytest stops with "unrecognized arguments" without it. Its report has no steps and only the failure evidence; the step screenshots and the cart check are in Allure only.

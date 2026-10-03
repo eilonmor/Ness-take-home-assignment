@@ -137,7 +137,7 @@ Login is required, but a **guest / stub** login is allowed (document it as a lim
 
 ### Stage 6 — Assert Cart Total (~25 min) ✅ DONE
 - [x] `CartPage`: open the cart and read the subtotal with the price parser.
-  - `pages/cart_page.py`, `Header.open_cart()`, `CartService.assert_cart_total_not_exceeds()` + `check_cart_total()`; e2e test `tests/e2e/test_cart_total.py`.
+  - `pages/cart_page.py`, `Header.open_cart()`, `CartService.assert_cart_total_not_exceeds()` + `check_cart_total()`; e2e test `tests/e2e/test_cart_total.py` (became the Stage 7 scenario test).
   - Reads the order summary's "Items (n)" row by default (item prices only, like the search filter); `cart.total_line: subtotal` checks items + shipping instead (ADR-10).
 - [x] Compute `budget_per_item * items_count` and assert `total <= budget`, with a clear failure message (actual vs. budget).
   - Raises `CartBudgetExceededError` (an `AssertionError`): `Cart items ILS 675.50 is above the budget 660.00 (220 per item x 3 items), over by 15.50`. Compared in cents.
@@ -146,9 +146,11 @@ Login is required, but a **guest / stub** login is allowed (document it as a lim
 
 > ✅ **Milestone 6:** the assertion passes for the full scenario; a forced failure shows a readable message.
 
-### Stage 7 — E2E Test & Reports (~20 min)
-- [ ] `tests/test_e2e_cart_budget.py`: search → add → assert, parametrized from the data file, with Allure steps.
-- [ ] Reports: Allure results + JUnit XML (`--junitxml=reports/junit.xml`) + optional `pytest-html`.
+### Stage 7 — E2E Test & Reports (~20 min) — code done, live green run pending
+- [x] `tests/test_e2e_cart_budget.py`: search → add → assert, parametrized from the data file, with Allure steps.
+  - Lives at `tests/e2e/test_e2e_cart_budget.py` (with the other live tests); it replaces the Stage 6 `test_cart_total.py` so the same flow is not run twice against eBay. Numbered top-level steps per spec function, title built from the data row (ADR-11).
+- [x] Reports: Allure results + JUnit XML (`--junitxml=reports/junit.xml`) + optional `pytest-html`.
+  - All three are written by every run (`pytest.ini`): `reports/allure-results/`, `reports/junit.xml`, `reports/report.html` (self-contained, no Allure CLI needed). The Allure report also gets an "Environment" widget with the run's profile.
 
 > ✅ **Milestone 7:** one command gives a green run and an Allure report with steps, screenshots and trace.
 
@@ -168,7 +170,7 @@ Bugs to cover:
 > ✅ **Milestone 8:** `ReadMeAIBugs.md` lists ≥ 3 bugs, each with an explanation and fixed lines.
 
 ### Stage 9 — README & Delivery (~20 min)
-- [ ] README: prerequisites, installation, run commands (per ENV/profile), how to generate/open reports.
+- [x] README: prerequisites, installation, run commands (per ENV/profile), how to generate/open reports.
 - [ ] Short architecture explanation (folder tree + layers).
 - [ ] Limitations/assumptions: guest login stub, captcha/bot detection (not handled, out of scope), regional pricing/currency, dynamic DOM, sponsored items, shipping not included in the price filter.
 - [ ] Push to GitHub and confirm the repo is accessible.
