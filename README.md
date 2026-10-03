@@ -3,13 +3,30 @@
 E2E scenario on eBay with Playwright + Python: search → filter by price → add to cart → assert the cart total.
 Spec and stage tracker: [MISSION_PLAN.md](MISSION_PLAN.md). Design decisions: [docs/DECISIONS.md](docs/DECISIONS.md).
 
+## Contents
+
+- [Prerequisites](#prerequisites)
+- [Setup](#setup)
+- [Configuration](#configuration)
+- [Running the tests](#running-the-tests)
+- [Reports](#reports)
+- [Limitations](#limitations)
+  - [Login: guest session by default](#login-guest-session-by-default)
+  - [Bot detection](#bot-detection)
+  - [Search and prices](#search-and-prices)
+  - [Add to cart](#add-to-cart)
+  - [Cart total check](#cart-total-check)
+
 ## Prerequisites
 
-| Tool | Version | Needed for |
-|---|---|---|
-| Python | 3.11+ (developed on 3.14) | Running the tests (`typing.Self`) |
-| Git | any | Cloning the repo |
-| Allure CLI | 2.x, needs Java 8+ | Viewing the Allure report only (`allure serve`). Install with `scoop install allure` (Windows), `brew install allure` (macOS) or `npm install -g allure-commandline`. |
+| Tool | Version | Required? | Needed for |
+|---|---|---|---|
+| Python | 3.11+ (developed on 3.14) | Required | Running the tests (`typing.Self`) |
+| Git | any | Required | Cloning the repo |
+| JDK | 21+ | Optional | Running the Allure CLI (it is a Java app). Set `JAVA_HOME` to the JDK folder. Install with `winget install Microsoft.OpenJDK.21` (Windows) or `brew install openjdk@21` (macOS). |
+| Allure CLI | 2.x | Optional | Viewing the Allure report (`allure serve`). Install with `scoop install allure` (Windows), `brew install allure` (macOS) or `npm install -g allure-commandline`. |
+
+The tests run without the two optional tools: every run still writes the Allure results, and the HTML and JUnit reports need neither.
 
 A desktop session with a visible browser is also needed: eBay blocks headless browsers (see [Bot detection](#bot-detection)).
 
