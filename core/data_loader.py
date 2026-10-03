@@ -14,9 +14,8 @@ from typing import Any
 
 import yaml
 
+from core.constants import DEFAULT_SEARCH_LIMIT, SEARCH_CASES_KEY
 from utils.files import safe_filename
-
-DEFAULT_LIMIT = 5
 
 
 @dataclass(frozen=True)
@@ -26,7 +25,7 @@ class SearchCase:
     id: str
     query: str
     max_price: float
-    limit: int = DEFAULT_LIMIT
+    limit: int = DEFAULT_SEARCH_LIMIT
     budget_per_item: float | None = None
 
     @property
@@ -40,9 +39,9 @@ def load_search_cases(path: Path) -> list[SearchCase]:
     with path.open(encoding="utf-8") as file:
         raw = yaml.safe_load(file) or {}
 
-    rows = raw.get("cases") if isinstance(raw, dict) else None
+    rows = raw.get(SEARCH_CASES_KEY) if isinstance(raw, dict) else None
     if not isinstance(rows, list) or not rows:
-        raise ValueError(f"{path.name}: expected a non-empty 'cases:' list")
+        raise ValueError(f"{path.name}: expected a non-empty '{SEARCH_CASES_KEY}:' list")
 
     cases: list[SearchCase] = []
     first_row_by_id: dict[str, int] = {}
@@ -70,7 +69,7 @@ def _parse_case(row: Any, where: str) -> SearchCase:
     query = query.strip()
 
     max_price = _positive_number(row.get("max_price"), "max_price", where)
-    limit = row.get("limit", DEFAULT_LIMIT)
+    limit = row.get("limit", DEFAULT_SEARCH_LIMIT)
     # bool is a subclass of int: reject `limit: yes`.
     if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
         raise ValueError(f"{where}: 'limit' must be a positive integer, got {limit!r}")

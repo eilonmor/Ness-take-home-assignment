@@ -15,16 +15,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-# Longest first: "US $" must win over "$".
-CURRENCY_SYMBOLS = (
-    ("US $", "USD"),
-    ("C $", "CAD"),
-    ("AU $", "AUD"),
-    ("$", "USD"),
-    ("£", "GBP"),
-    ("€", "EUR"),
-    ("₪", "ILS"),
-)
+from core.constants import CURRENCY_SYMBOLS, FREE_PRICE_WORD
+
 _CURRENCY_CODE = re.compile(r"\b([A-Z]{3})\b")
 _AMOUNT = re.compile(r"\d[\d.,]*")
 _RANGE_SEPARATOR = re.compile(r"\s+(?:to|-|–)\s+", re.IGNORECASE)
@@ -55,7 +47,7 @@ def parse_price(text: str | None) -> Price | None:
     if not cleaned:
         return None
     if not any(char.isdigit() for char in cleaned):
-        if "free" in cleaned.lower():
+        if FREE_PRICE_WORD in cleaned.lower():
             return Price(0.0, 0.0)
         return None
 

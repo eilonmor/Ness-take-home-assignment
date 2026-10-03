@@ -12,15 +12,11 @@ from playwright.sync_api import Locator, Page
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from core.config import Settings
+from core.constants import ArtifactFiles, BotChallenge, Endpoints, EnvVar, ScreenshotName, Waits
 from core.exceptions import BotChallengeError
 from core.logger import get_logger
 from utils.attachments import attach_screenshot
 from utils.files import safe_filename, timestamp
-
-# eBay answers suspected bots with one of these pages instead of the content.
-# "Error Page" is what a headless browser gets on a cold visit.
-BOT_CHALLENGE_TITLES = ("Pardon Our Interruption", "Security Measure", "Error Page")
-BOT_CHALLENGE_URL_PARTS = ("/splashui/captcha", "/splashui/challenge")
 
 
 class BasePage:
@@ -30,7 +26,7 @@ class BasePage:
     locators + business-level methods; tests never touch raw selectors.
     """
 
-    path: str = "/"
+    path: str = Endpoints.HOME
 
     def __init__(self, page: Page, settings: Settings) -> None:
         self.page = page
@@ -41,13 +37,13 @@ class BasePage:
 
     def open(self) -> Self:
         self.log.info("Opening %s", self.path)
-        self.page.goto(self.path, wait_until="domcontentloaded")
+        self.page.goto(self.path, wait_until=Waits.NAVIGATION_WAIT_UNTIL)
         self.ensure_not_blocked()
         return self
 
     def go_back(self) -> None:
         self.log.debug("Navigating back from %s", self.page.url)
-        self.page.go_back(wait_until="domcontentloaded")
+        self.page.go_back(wait_until=Waits.NAVIGATION_WAIT_UNTIL)
 
     @contextmanager
     def expect_navigation(self, arrived: Callable[[str], bool]) -> Iterator[None]:
@@ -65,7 +61,7 @@ class BasePage:
         """
         with self.page.expect_navigation(
             url=lambda url: arrived(url) or bot_challenge_reason("", url) is not None,
-            wait_until="domcontentloaded",
+            wait_until=Waits.NAVIGATION_WAIT_UNTIL,
         ):
             yield
         self.ensure_not_blocked()
@@ -80,7 +76,7 @@ class BasePage:
         locator.wait_for(state="visible", timeout=timeout_ms)
         return locator
 
-    def is_visible(self, locator: Locator, timeout_ms: float = 2000) -> bool:
+    def is_visible(self, locator: Locator, timeout_ms: float = Waits.OPTIONAL_ELEMENT_TIMEOUT_MS) -> bool:
         """Non-throwing visibility check, for optional elements (popups, filters)."""
         try:
             locator.wait_for(state="visible", timeout=timeout_ms)
@@ -93,16 +89,16 @@ class BasePage:
         reason = bot_challenge_reason(self.page.title(), self.page.url)
         if reason is None:
             return
-        self.take_screenshot("bot_challenge")
+        self.take_screenshot(ScreenshotName.BOT_CHALLENGE)
         raise BotChallengeError(
             f"eBay served a bot check ({reason}) at {self.page.url}. "
             "eBay blocks headless runs and rate-limits bursts of runs: run headed "
-            "(ENV=dev or HEADLESS=false) and wait a few minutes before retrying."
+            f"({EnvVar.ENV}=dev or {EnvVar.HEADLESS}=false) and wait a few minutes before retrying."
         )
 
     # --- actions ----------------------------------------------------------
 
-    def click(self, locator: Locator, retries: int = 1) -> None:
+    def click(self, locator: Locator, retries: int = Waits.CLICK_RETRIES) -> None:
         """Click once visible; retry if e.g. an overlay intercepted the first attempt."""
         for attempt in range(retries + 1):
             try:
@@ -125,7 +121,8 @@ class BasePage:
 
     def take_screenshot(self, name: str, full_page: bool = False) -> Path:
         """Save a screenshot under reports/screenshots and attach it to Allure."""
-        path = self.settings.artifacts.screenshots_dir / f"{timestamp()}_{safe_filename(name)}.png"
+        file_name = f"{timestamp()}_{safe_filename(name)}{ArtifactFiles.SCREENSHOT_SUFFIX}"
+        path = self.settings.artifacts.screenshots_dir / file_name
         self.page.screenshot(path=path, full_page=full_page)
         attach_screenshot(path, name)
         self.log.info("Screenshot saved: %s", path)
@@ -137,9 +134,9 @@ def bot_challenge_reason(title: str, url: str) -> str | None:
     # Whole-title match ("Error Page | eBay" -> "error page"), so an item named
     # "Error Page T-Shirt" is not mistaken for a block page.
     page_name = title.split("|")[0].strip().rstrip(".").lower()
-    if page_name in (blocked.lower() for blocked in BOT_CHALLENGE_TITLES):
+    if page_name in (blocked.lower() for blocked in BotChallenge.TITLES):
         return f"title '{title}'"
-    for url_part in BOT_CHALLENGE_URL_PARTS:
+    for url_part in BotChallenge.URL_PARTS:
         if url_part in url:
             return f"URL contains '{url_part}'"
     return None

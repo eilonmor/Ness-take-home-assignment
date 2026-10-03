@@ -223,3 +223,31 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 - ❌ Only the `listbox-button` variant widget is supported. Native `<select>` pickers (older layout) and image swatches were not seen on current pages and are not handled; such a listing fails with "eBay asks to select: …".
 - ❌ A "See all options" layout was not found on live pages during probing, so it is not handled.
 - ❌ One bad listing (ended between search and add, sold out) fails the whole scenario by design.
+
+---
+
+## ADR-9 — Fixed values in one `core/constants.py`, run-time values in the profiles
+
+**Context.** Selectors, URL paths and query parameters, screenshot and attachment names, env var names, default waits and assertion messages were spread as literals across pages, components, services and tests. Some were module constants (`CART_BADGE`, `MAX_PRICE_PARAM`, `CARD_XPATHS`), others inline strings. A change in eBay's markup or a renamed env var meant hunting through several layers.
+
+**Decision.**
+- Every value that is **fixed** (set by eBay's markup and URLs, by the spec, or by framework conventions) lives in [core/constants.py](../core/constants.py), grouped by the module that uses it: `HeaderLocators`, `ItemPageLocators`, `SearchResultsXPaths`, `QueryParam`, `Endpoints`, `EnvVar`, `Waits`, `ScreenshotName`, `AssertMessage`, ...
+- Groups are plain namespace classes with `UPPER_SNAKE` attributes, so a call site reads `Locators.ADD_TO_CART_BUTTON` without `.value`. Closed sets that are validated (`BrowserName`, `TraceMode`) are `StrEnum`s; they compare equal to the plain strings read from YAML.
+- Messages with parameters are `str.format` templates (`AssertMessage.NO_ITEMS_FOUND.format(query=..., max_price=...)`).
+- Values that **change per run** stay in the YAML profiles (ADR-2): base URL, timeouts, browser, data file, paging cap.
+- The module lives in `core/` (the bottom layer) and imports nothing from the project, so every layer can use it without cycles.
+
+**Alternatives.**
+
+| Option | Why not |
+|---|---|
+| Keep locators next to each page object | The classic POM layout and fine on its own, but the values were split between module constants, `__init__` bodies and inline strings, and tests, services and config each had their own literals as well. |
+| One `Enum` per group | Every use would need `.value`, and Playwright and `str.format` would get enum members rather than strings. |
+| Put selectors in YAML too | Selectors are not something a run should change; loading them from data would lose IDE navigation and import-time errors. |
+| Use the constants inside unit tests | A unit test that builds its expected value from the same constant cannot catch a wrong constant. Unit tests keep their own literal inputs and expectations. |
+
+**Consequences.**
+- ✅ A layout change on eBay is an edit to one group in one file; pages and components only hold structure and behaviour.
+- ✅ Env var names, screenshot names and report labels are consistent everywhere they are used.
+- ❌ Opening a page object no longer shows its selectors inline; jump to the `*Locators` group (one click in an IDE).
+- ❌ Log, exception and Allure step texts stay inline on purpose: they are prose, not values, and are easier to read at the call site.

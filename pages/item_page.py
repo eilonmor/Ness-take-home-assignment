@@ -13,12 +13,9 @@ from components.header import Header
 from components.variant_selector import VariantChoice, VariantSelector
 from core.base_page import BasePage
 from core.config import Settings
+from core.constants import CART_URL_PARTS, ItemPageValues, Waits
+from core.constants import ItemPageLocators as Locators
 from core.exceptions import AddToCartError, VariantSelectionError
-
-# The "Add to cart" link points here; it is followed only when the click lands
-# before the page's scripts take it over (then eBay shows the cart page instead
-# of the dialog, but the item is added all the same).
-CART_URL_PARTS = ("cart.ebay.", "cart.payments.ebay.")
 
 
 class ItemPage(BasePage):
@@ -27,10 +24,10 @@ class ItemPage(BasePage):
         self.header = Header(page, settings)
         self.variants = VariantSelector(page, settings)
         self.added_dialog = AddedToCartDialog(page, settings)
-        self.title = page.locator("h1.x-item-title__mainTitle")
-        self.price = page.locator("[data-testid='x-price-primary']").first
-        self.quantity_input = page.locator("[data-testid='x-quantity'] input[name='quantity']")
-        self.add_to_cart_button = page.locator("[data-testid='x-atc-action'] a.ux-call-to-action")
+        self.title = page.locator(Locators.TITLE)
+        self.price = page.locator(Locators.PRICE).first
+        self.quantity_input = page.locator(Locators.QUANTITY_INPUT)
+        self.add_to_cart_button = page.locator(Locators.ADD_TO_CART_BUTTON)
 
     def open_listing(self, url: str) -> Self:
         self.path = url
@@ -44,7 +41,7 @@ class ItemPage(BasePage):
 
     def price_text(self) -> str:
         """As displayed, e.g. "US $16.25" or "ILS 59.37"; changes with the chosen variant."""
-        return self.text_of(self.price) if self.price.count() else "n/a"
+        return self.text_of(self.price) if self.price.count() else ItemPageValues.PRICE_NOT_SHOWN
 
     def select_random_variants(self, rng: random.Random) -> list[VariantChoice]:
         if not self.variants.has_variants():
@@ -58,9 +55,9 @@ class ItemPage(BasePage):
         The box is disabled when only one unit is for sale ("Last one").
         """
         box = self.quantity_input
-        if box.count() and box.is_enabled() and box.input_value() != "1":
-            self.log.info("Setting quantity to 1 (was %s)", box.input_value())
-            self.fill(box, "1")
+        if box.count() and box.is_enabled() and box.input_value() != ItemPageValues.QUANTITY:
+            self.log.info("Setting quantity to %s (was %s)", ItemPageValues.QUANTITY, box.input_value())
+            self.fill(box, ItemPageValues.QUANTITY)
 
     def add_to_cart(self) -> str:
         """Click "Add to cart" and wait until eBay confirms; returns the confirmation text.
@@ -76,8 +73,7 @@ class ItemPage(BasePage):
             raise AddToCartError(
                 f"No 'Add to cart' button on {self.url} (listing ended, sold out or auction only?)"
             )
-        # Clicked before the page's scripts are ready, the link navigates away instead of opening the dialog.
-        self.page.wait_for_load_state("load")
+        self.page.wait_for_load_state(Waits.PAGE_SCRIPTS_READY)
         self.click(self.add_to_cart_button)
 
         outcome = self.added_dialog.details.or_(self.variants.missing_value_errors).first
@@ -87,7 +83,7 @@ class ItemPage(BasePage):
             if any(part in self.url for part in CART_URL_PARTS):
                 self.ensure_not_blocked()
                 self.log.info("eBay opened the cart page instead of the dialog")
-                return "Opened the cart page"
+                return ItemPageValues.CART_PAGE_OPENED
             raise AddToCartError(f"eBay did not confirm the add to cart on {self.url}") from None
 
         if missing := self.variants.missing_values():
