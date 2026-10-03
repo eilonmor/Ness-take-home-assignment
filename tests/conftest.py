@@ -28,6 +28,7 @@ import pytest
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, expect, sync_playwright
 
 from core.config import Settings, load_settings
+from core.constants import ArtifactFiles, AttachmentName, PytestOption, TraceMode
 from core.data_loader import load_search_cases
 from core.logger import configure_logging, get_logger
 from services.auth_service import AuthService, UserSession
@@ -41,20 +42,20 @@ settings_key = pytest.StashKey[Settings]()
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption("--env", action="store", default=None, help="Settings profile from config/ (overrides $ENV).")
+    parser.addoption(PytestOption.ENV, action="store", default=None, help="Settings profile from config/ (overrides $ENV).")
 
 
 def _load_settings_once(config: pytest.Config) -> Settings:
     # Needed both at collection (data file path) and by the fixtures: load once per run.
     if settings_key not in config.stash:
-        config.stash[settings_key] = load_settings(config.getoption("--env"))
+        config.stash[settings_key] = load_settings(config.getoption(PytestOption.ENV))
     return config.stash[settings_key]
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
-    if "search_case" in metafunc.fixturenames:
+    if PytestOption.SEARCH_CASE_ARG in metafunc.fixturenames:
         cases = load_search_cases(_load_settings_once(metafunc.config).data.search_cases)
-        metafunc.parametrize("search_case", cases, ids=[case.id for case in cases])
+        metafunc.parametrize(PytestOption.SEARCH_CASE_ARG, cases, ids=[case.id for case in cases])
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
@@ -114,7 +115,7 @@ def context(browser: Browser, settings: Settings, request: pytest.FixtureRequest
     context.set_default_navigation_timeout(settings.timeouts.navigation_ms)
 
     trace_mode = settings.artifacts.trace
-    if trace_mode != "off":
+    if trace_mode != TraceMode.OFF:
         context.tracing.start(title=request.node.nodeid, screenshots=True, snapshots=True, sources=True)
 
     yield context
@@ -135,10 +136,11 @@ def context(browser: Browser, settings: Settings, request: pytest.FixtureRequest
 
 def _save_failure_screenshots(context: BrowserContext, settings: Settings, run_id: str) -> None:
     for index, page in enumerate(context.pages):
-        path = settings.artifacts.screenshots_dir / f"{run_id}_failure_{index}.png"
+        file_name = ArtifactFiles.FAILURE_SCREENSHOT.format(run_id=run_id, index=index)
+        path = settings.artifacts.screenshots_dir / f"{file_name}{ArtifactFiles.SCREENSHOT_SUFFIX}"
         try:
             page.screenshot(path=path, full_page=True)
-            attach_screenshot(path, f"Failure screenshot (page {index})")
+            attach_screenshot(path, AttachmentName.FAILURE_SCREENSHOT.format(index=index))
         except Exception as error:  # page may already be closed/crashed
             log.warning("Could not capture failure screenshot of page %d: %s", index, error)
             continue
@@ -147,12 +149,12 @@ def _save_failure_screenshots(context: BrowserContext, settings: Settings, run_i
 
 def _finish_tracing(context: BrowserContext, settings: Settings, run_id: str, failed: bool) -> None:
     trace_mode = settings.artifacts.trace
-    if trace_mode == "on" or (trace_mode == "retain-on-failure" and failed):
-        trace_path = settings.artifacts.traces_dir / f"{run_id}.zip"
+    if trace_mode == TraceMode.ON or (trace_mode == TraceMode.RETAIN_ON_FAILURE and failed):
+        trace_path = settings.artifacts.traces_dir / f"{run_id}{ArtifactFiles.TRACE_SUFFIX}"
         context.tracing.stop(path=trace_path)
         attach_trace(trace_path)
         log.info("Trace saved: %s (open with: playwright show-trace %s)", trace_path, trace_path)
-    elif trace_mode != "off":
+    elif trace_mode != TraceMode.OFF:
         context.tracing.stop()
 
 

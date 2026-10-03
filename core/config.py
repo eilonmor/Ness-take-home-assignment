@@ -22,14 +22,20 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-PROFILES_DIR = PROJECT_ROOT / "config"
-BASE_PROFILE = "base"
-DEFAULT_ENV = "dev"
-TRACE_MODES = ("on", "off", "retain-on-failure")
-BROWSERS = ("chromium", "firefox", "webkit")
-TRUE_VALUES = ("1", "true", "yes", "on")
-FALSE_VALUES = ("0", "false", "no", "off")
+from core.constants import (
+    BASE_PROFILE,
+    BROWSERS,
+    DEFAULT_ENV,
+    DOTENV_FILE,
+    FALSE_VALUES,
+    PROFILE_SUFFIX,
+    PROFILES_DIR,
+    PROJECT_ROOT,
+    TRACE_MODES,
+    TRUE_VALUES,
+    ArtifactFiles,
+    EnvVar,
+)
 
 
 @dataclass(frozen=True)
@@ -56,15 +62,15 @@ class ArtifactSettings:
 
     @property
     def screenshots_dir(self) -> Path:
-        return self.dir / "screenshots"
+        return self.dir / ArtifactFiles.SCREENSHOTS_DIR
 
     @property
     def traces_dir(self) -> Path:
-        return self.dir / "traces"
+        return self.dir / ArtifactFiles.TRACES_DIR
 
     @property
     def logs_dir(self) -> Path:
-        return self.dir / "logs"
+        return self.dir / ArtifactFiles.LOGS_DIR
 
 
 @dataclass(frozen=True)
@@ -115,20 +121,20 @@ class Settings:
 
 def load_settings(env: str | None = None) -> Settings:
     """Build Settings for ``env`` (falls back to $ENV, then ``dev``)."""
-    load_dotenv(PROJECT_ROOT / ".env")
-    env = (env or _env("ENV") or DEFAULT_ENV).strip().lower()
+    load_dotenv(DOTENV_FILE)
+    env = (env or _env(EnvVar.ENV) or DEFAULT_ENV).strip().lower()
 
-    profile_path = PROFILES_DIR / f"{env}.yaml"
+    profile_path = PROFILES_DIR / f"{env}{PROFILE_SUFFIX}"
     if env == BASE_PROFILE or not profile_path.is_file():
         raise ValueError(f"Unknown ENV '{env}'. Available profiles: {', '.join(available_profiles())}")
 
-    raw = _deep_merge(_read_yaml(PROFILES_DIR / f"{BASE_PROFILE}.yaml"), _read_yaml(profile_path))
+    raw = _deep_merge(_read_yaml(PROFILES_DIR / f"{BASE_PROFILE}{PROFILE_SUFFIX}"), _read_yaml(profile_path))
     raw = _deep_merge(raw, _env_overrides())
     return _build_settings(env, raw)
 
 
 def available_profiles() -> list[str]:
-    return sorted(path.stem for path in PROFILES_DIR.glob("*.yaml") if path.stem != BASE_PROFILE)
+    return sorted(path.stem for path in PROFILES_DIR.glob(f"*{PROFILE_SUFFIX}") if path.stem != BASE_PROFILE)
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -154,20 +160,20 @@ def _env_overrides() -> dict[str, Any]:
     """
     overrides: dict[str, Any] = {}
     browser: dict[str, Any] = {}
-    if base_url := _env("BASE_URL"):
+    if base_url := _env(EnvVar.BASE_URL):
         overrides["base_url"] = base_url
-    if browser_name := _env("BROWSER"):
+    if browser_name := _env(EnvVar.BROWSER):
         browser["name"] = browser_name.lower()
-    if (headless := _env_bool("HEADLESS")) is not None:
+    if (headless := _env_bool(EnvVar.HEADLESS)) is not None:
         browser["headless"] = headless
-    if slow_mo := _env("SLOW_MO"):
+    if slow_mo := _env(EnvVar.SLOW_MO):
         browser["slow_mo_ms"] = int(slow_mo)
     if browser:
         overrides["browser"] = browser
-    if (guest := _env_bool("EBAY_GUEST")) is not None:
+    if (guest := _env_bool(EnvVar.GUEST)) is not None:
         overrides["auth"] = {"guest": guest}
-    if random_seed := _env("RANDOM_SEED"):
-        overrides["cart"] = {"random_seed": _parse_int(random_seed, "RANDOM_SEED")}
+    if random_seed := _env(EnvVar.RANDOM_SEED):
+        overrides["cart"] = {"random_seed": _parse_int(random_seed, EnvVar.RANDOM_SEED)}
     return overrides
 
 
@@ -262,9 +268,11 @@ def _build_cart(cart: dict[str, Any]) -> CartSettings:
 def _build_auth(auth: dict[str, Any]) -> AuthSettings:
     """Guest flag from the profile/EBAY_GUEST; credentials only from the environment."""
     guest = _profile_bool(auth["guest"], "auth.guest")
-    username, password = _env("EBAY_USERNAME"), _env("EBAY_PASSWORD")
+    username, password = _env(EnvVar.USERNAME), _env(EnvVar.PASSWORD)
     if not guest and not (username and password):
-        raise ValueError("Real login (EBAY_GUEST=false) needs EBAY_USERNAME and EBAY_PASSWORD in the environment or .env")
+        raise ValueError(
+            f"Real login ({EnvVar.GUEST}=false) needs {EnvVar.USERNAME} and {EnvVar.PASSWORD} in the environment or .env"
+        )
     return AuthSettings(guest=guest, username=username, password=password)
 
 

@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 
 from core.config import PROJECT_ROOT
-from core.data_loader import DEFAULT_LIMIT, SearchCase, load_search_cases
+from core.constants import DEFAULT_SEARCH_LIMIT as DEFAULT_LIMIT
+from core.data_loader import SearchCase, load_search_cases
 
 
 def write_cases(tmp_path: Path, content: str) -> Path:

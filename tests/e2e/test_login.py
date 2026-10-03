@@ -3,6 +3,7 @@ from playwright.sync_api import Page
 
 from components.header import Header
 from core.config import Settings
+from core.constants import AssertMessage
 from services.auth_service import UserSession
 
 
@@ -12,4 +13,6 @@ def test_session_is_ready(page: Page, settings: Settings, user_session: UserSess
     header = Header(page, settings)
 
     assert user_session.guest is settings.auth.guest
-    assert header.is_signed_in() is not user_session.guest, f"Header shows: {header.greeting()!r}"
+    assert header.is_signed_in() is not user_session.guest, AssertMessage.HEADER_SHOWS.format(
+        greeting=header.greeting()
+    )

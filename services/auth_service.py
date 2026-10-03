@@ -8,6 +8,7 @@ import allure
 from playwright.sync_api import Page
 
 from core.config import AuthSettings, Settings
+from core.constants import ScreenshotName, TraceMode
 from core.exceptions import LoginError
 from core.logger import get_logger
 from pages.home_page import HomePage
@@ -45,7 +46,7 @@ class AuthService:
             home.open()
 
         session = self._continue_as_guest(home) if auth.guest else self._sign_in(home, auth)
-        home.take_screenshot(f"session_ready_{session.label}")
+        home.take_screenshot(ScreenshotName.SESSION_READY.format(label=session.label))
         self.log.info("Session ready as %s", session.label)
         return session
 
@@ -60,7 +61,7 @@ class AuthService:
         assert auth.username and auth.password
         with allure.step(f"Sign in as {auth.username}"):
             # Not traced: the trace would store the password in plain text.
-            with tracing_paused(self.page.context, self.settings.artifacts.trace != "off"):
+            with tracing_paused(self.page.context, self.settings.artifacts.trace != TraceMode.OFF):
                 home.header.click_sign_in()
                 LoginPage(self.page, self.settings).sign_in(auth.username, auth.password)
             home.header.dismiss_ship_to_dialog()

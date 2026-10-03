@@ -6,6 +6,7 @@ from playwright.sync_api import Page
 
 from core.base_page import BasePage
 from core.config import Settings
+from core.constants import AddedToCartDialogLocators as Locators
 
 
 class AddedToCartDialog(BasePage):
@@ -16,10 +17,9 @@ class AddedToCartDialog(BasePage):
 
     def __init__(self, page: Page, settings: Settings) -> None:
         super().__init__(page, settings)
-        self.root = page.locator(".x-atc-action__overlay")
-        # Only rendered once the item is in the cart (the spinner state has no details).
-        self.details = self.root.locator(".x-atc-layer-v3--info")
-        self.close_button = self.root.locator("button.lightbox-dialog__close")
+        self.root = page.locator(Locators.ROOT)
+        self.details = self.root.locator(Locators.DETAILS)
+        self.close_button = self.root.locator(Locators.CLOSE_BUTTON)
 
     def summary(self) -> str:
         """e.g. "Unisex classic tee / M, White / ILS 59.37 / See in cart ..."."""

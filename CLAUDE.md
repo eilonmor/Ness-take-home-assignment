@@ -30,7 +30,7 @@ playwright show-trace reports/traces/<file>.zip
 
 ## Architecture
 
-Layers (each depends only on those below): `tests/` → `services/` (business flows, e.g. `AuthService`) → `pages/` → `components/` (reusable UI parts like `Header`) → `core/` + `utils/`. Tests never use raw selectors; page objects and components both subclass `core.base_page.BasePage` and get `(page, settings)` in the constructor.
+Layers (each depends only on those below): `tests/` → `services/` (business flows, e.g. `AuthService`) → `pages/` → `components/` (reusable UI parts like `Header`) → `core/` + `utils/`. Tests never use raw selectors; page objects and components both subclass `core.base_page.BasePage` and get `(page, settings)` in the constructor. Fixed values (selectors/XPaths, URL paths and params, env var names, report names, assertion messages) live in [core/constants.py](core/constants.py), grouped per module (ADR-9); per-run values stay in the YAML profiles.
 
 **Settings** ([core/config.py](core/config.py)): `config/base.yaml` → `config/<ENV>.yaml` → env vars, deep-merged into frozen dataclasses. Profile chosen by `--env`, else `ENV`, else `dev` (headed — needed against eBay). Validation is strict on purpose (quoted `"false"` in YAML is rejected, unknown bool strings raise). Credentials (`EBAY_USERNAME`/`EBAY_PASSWORD`) come only from the environment/`.env`, never profiles; `password` is `repr=False`.
 

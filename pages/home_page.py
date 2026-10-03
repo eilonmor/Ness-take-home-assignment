@@ -9,10 +9,11 @@ from playwright.sync_api import Page
 from components.header import Header
 from core.base_page import BasePage
 from core.config import Settings
+from core.constants import Endpoints
 
 
 class HomePage(BasePage):
-    path = "/"
+    path = Endpoints.HOME
 
     def __init__(self, page: Page, settings: Settings) -> None:
         super().__init__(page, settings)

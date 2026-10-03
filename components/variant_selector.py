@@ -9,12 +9,8 @@ from playwright.sync_api import Locator, Page, expect
 
 from core.base_page import BasePage
 from core.config import Settings
+from core.constants import VariantSelectorLocators as Locators
 from core.exceptions import VariantSelectionError
-
-# Every value of a dimension, except the "Select" placeholder; out-of-stock
-# values are rendered as aria-disabled="true", e.g. "iPhone 15 (Out of stock)".
-OPTIONS = "[role='option'][data-sku-value-name]"
-AVAILABLE_OPTIONS = f"{OPTIONS}:not([aria-disabled='true'])"
 
 
 @dataclass(frozen=True)
@@ -37,10 +33,9 @@ class VariantSelector(BasePage):
 
     def __init__(self, page: Page, settings: Settings) -> None:
         super().__init__(page, settings)
-        self.root = page.locator("[data-testid='x-msku-evo']")
-        self.dimensions = self.root.locator(".x-sku")
-        # Shown under a dimension when "Add to cart" is clicked without a value.
-        self.missing_value_errors = self.dimensions.locator(".error-text:not([hidden])")
+        self.root = page.locator(Locators.ROOT)
+        self.dimensions = self.root.locator(Locators.DIMENSION)
+        self.missing_value_errors = self.dimensions.locator(Locators.MISSING_VALUE_ERROR)
 
     def has_variants(self) -> bool:
         return self.dimensions.count() > 0
@@ -54,14 +49,15 @@ class VariantSelector(BasePage):
         return [
             self._name(dimension)
             for dimension in self.dimensions.all()
-            if dimension.locator(".error-text:not([hidden])").count()
+            if dimension.locator(Locators.MISSING_VALUE_ERROR).count()
         ]
 
     def _select_random_value(self, dimension: Locator, rng: random.Random) -> VariantChoice:
         name = self._name(dimension)
-        available = dimension.locator(AVAILABLE_OPTIONS)
+        available = dimension.locator(Locators.AVAILABLE_OPTIONS)
         values: list[str] = available.evaluate_all(
-            "options => options.map(o => o.getAttribute('data-sku-value-name').trim())"
+            "(options, attribute) => options.map(o => o.getAttribute(attribute).trim())",
+            Locators.VALUE_NAME_ATTRIBUTE,
         )
         if not values:
             raise VariantSelectionError(
@@ -70,11 +66,11 @@ class VariantSelector(BasePage):
 
         index = rng.randrange(len(values))
         self.log.info("%s: picking %r out of %d available %s", name, values[index], len(values), values)
-        self.click(dimension.locator("button.listbox-button__control"))
+        self.click(dimension.locator(Locators.DROPDOWN_BUTTON))
         self.click(available.nth(index))
-        expect(dimension.locator(".btn__text")).to_have_text(values[index])
+        expect(dimension.locator(Locators.SELECTED_VALUE)).to_have_text(values[index])
         return VariantChoice(name, values[index])
 
     @staticmethod
     def _name(dimension: Locator) -> str:
-        return dimension.locator(".btn__label").inner_text().strip().rstrip(":")
+        return dimension.locator(Locators.DIMENSION_LABEL).inner_text().strip().rstrip(":")

@@ -6,9 +6,8 @@ from playwright.sync_api import Page
 
 from core.base_page import BasePage
 from core.config import Settings
-
-
-CART_BADGE = ".gh-cart .gh-badge"
+from core.constants import Endpoints
+from core.constants import HeaderLocators as Locators
 
 
 class Header(BasePage):
@@ -21,17 +20,15 @@ class Header(BasePage):
 
     def __init__(self, page: Page, settings: Settings) -> None:
         super().__init__(page, settings)
-        self.root = page.locator("#gh")
-        self.identity = self.root.locator(".gh-identity")
-        # Guest: <span class="gh-identity-signed-out-unrecognized">Hi! <a>Sign in</a> or <a>register</a>
-        self.signed_out_marker = self.identity.locator("[class*='signed-out']")
-        self.sign_in_link = self.identity.locator("a[href*='signin.ebay.']")
-        self.ship_to_dialog = self.root.locator(".address-dialog__lightbox")
-        self.ship_to_dismiss = self.ship_to_dialog.locator("button.lightbox-dialog__close")
-        self.search_input = self.root.locator("#gh-ac")
-        self.search_button = self.root.locator("#gh-search-btn")
-        # Number of items in the cart; not rendered while the cart is empty.
-        self.cart_badge = self.root.locator(CART_BADGE)
+        self.root = page.locator(Locators.ROOT)
+        self.identity = self.root.locator(Locators.IDENTITY)
+        self.signed_out_marker = self.identity.locator(Locators.SIGNED_OUT_MARKER)
+        self.sign_in_link = self.identity.locator(Locators.SIGN_IN_LINK)
+        self.ship_to_dialog = self.root.locator(Locators.SHIP_TO_DIALOG)
+        self.ship_to_dismiss = self.ship_to_dialog.locator(Locators.SHIP_TO_DISMISS)
+        self.search_input = self.root.locator(Locators.SEARCH_INPUT)
+        self.search_button = self.root.locator(Locators.SEARCH_BUTTON)
+        self.cart_badge = self.root.locator(Locators.CART_BADGE)
 
     def is_signed_in(self) -> bool:
         self.wait_until_visible(self.identity)
@@ -54,7 +51,7 @@ class Header(BasePage):
         self.dismiss_ship_to_dialog()
         self.log.info("Searching for %r", query)
         self.fill(self.search_input, query)
-        with self.expect_navigation(lambda url: "/sch/" in url):
+        with self.expect_navigation(lambda url: Endpoints.SEARCH_PATH_PART in url):
             self.click(self.search_button)
 
     def cart_count(self) -> int:
@@ -65,8 +62,8 @@ class Header(BasePage):
     def wait_for_cart_count_above(self, count: int) -> int:
         """Wait until the badge shows more than ``count`` items (it updates in place after an add)."""
         self.page.wait_for_function(
-            "([selector, count]) => parseInt(document.querySelector(`#gh ${selector}`)?.textContent ?? '0', 10) > count",
-            arg=[CART_BADGE, count],
+            "([selector, count]) => parseInt(document.querySelector(selector)?.textContent ?? '0', 10) > count",
+            arg=[f"{Locators.ROOT} {Locators.CART_BADGE}", count],
         )
         return self.cart_count()
 

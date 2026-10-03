@@ -10,6 +10,7 @@ from playwright.sync_api import Page
 
 from components.variant_selector import VariantChoice
 from core.config import Settings
+from core.constants import SEED_UPPER_BOUND, AttachmentName, EnvVar, ScreenshotName
 from core.exceptions import VariantSelectionError
 from core.logger import get_logger
 from pages.item_page import ItemPage
@@ -42,7 +43,7 @@ class CartService:
         self.page = page
         self.settings = settings
         self.log = get_logger(type(self).__name__)
-        self.seed = settings.cart.random_seed if settings.cart.random_seed is not None else random.randrange(2**32)
+        self.seed = settings.cart.random_seed if settings.cart.random_seed is not None else random.randrange(SEED_UPPER_BOUND)
         self.rng = random.Random(self.seed)
 
     def add_items_to_cart(self, urls: list[str]) -> None:
@@ -58,7 +59,7 @@ class CartService:
         self.log.info("Adding %d items to the cart (variant seed %d)", len(urls), self.seed)
         with allure.step(f"Add {len(urls)} items to the cart (variant seed {self.seed})"):
             added = [self._add_item(url, number, len(urls)) for number, url in enumerate(urls, 1)]
-        attach_text(_summary(added, self.seed), "Items added to the cart")
+        attach_text(_summary(added, self.seed), AttachmentName.CART_ITEMS)
         return added
 
     def _add_item(self, url: str, number: int, total: int) -> CartItem:
@@ -70,7 +71,7 @@ class CartService:
                 variants = self._add_with_random_variants(item, url)
                 cart_count = item.header.wait_for_cart_count_above(cart_before)
                 added = CartItem(url, item.title_text(), item.price_text(), tuple(variants), cart_count)
-                item.take_screenshot(f"cart_item_{number}")
+                item.take_screenshot(ScreenshotName.CART_ITEM.format(number=number))
                 self.log.info("Added item %d/%d (cart now %d): %s", number, total, cart_count, added)
                 item.added_dialog.close()
                 return added
@@ -101,7 +102,7 @@ class CartService:
 
     def _failure_screenshot(self, item: ItemPage, number: int) -> None:
         try:
-            item.take_screenshot(f"cart_item_{number}_failed", full_page=True)
+            item.take_screenshot(ScreenshotName.CART_ITEM_FAILED.format(number=number), full_page=True)
         except Exception as error:  # best effort: never hide the original failure
             self.log.warning("Could not capture the item %d failure screenshot: %s", number, error)
 
@@ -111,6 +112,6 @@ class CartService:
 
 
 def _summary(items: list[CartItem], seed: int) -> str:
-    lines = [f"Variant seed: {seed} (replay with RANDOM_SEED={seed})"]
+    lines = [f"Variant seed: {seed} (replay with {EnvVar.RANDOM_SEED}={seed})"]
     lines += [f"{index}. {item}" for index, item in enumerate(items, 1)]
     return "\n".join(lines)
