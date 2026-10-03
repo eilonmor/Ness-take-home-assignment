@@ -44,6 +44,10 @@ class TraceMode(StrEnum):
     RETAIN_ON_FAILURE = "retain-on-failure"
 
 
+# What a trace records; also used to restart tracing after a pause (utils/tracing.py).
+TRACE_START_OPTIONS = {"screenshots": True, "snapshots": True, "sources": True}
+
+
 class CartTotalLine(StrEnum):
     """Which order-summary row the cart budget check reads (``cart.total_line``)."""
 
@@ -273,6 +277,26 @@ class LoginPageLocators:
     SIGN_IN_BUTTON = "#sgnBt"
     # Inline error under the field, e.g. "We couldn't find this eBay account."
     ERROR_MESSAGE = "#signin-error-msg"
+    # "Welcome back!" step: the username it is asking the password for.
+    USER_INFO = "#user-info"
+    # The span, not its inner a#switch-account-anchor: the span intercepts the click.
+    SWITCH_ACCOUNT = "#switch-account-link"
+    # Host of every sign-in step (the password step posts to /signin/s).
+    HOST_PART = "signin.ebay."
+    # "Simplify your sign-in" (accounts.ebay.com/acctsec/authn-register): eBay may offer
+    # a passkey after a correct password. "Skip for now" goes on to the return URL, signed in.
+    PASSKEY_SKIP = "#passkeys-cancel-btn"
+
+
+class LoginErrorText:
+    """Stable fragments of eBay's inline sign-in errors (seen live, en-US)."""
+
+    # Continue with an empty username: "Oops, that's not a match."
+    EMPTY_USERNAME = "not a match"
+    # "We couldn't find this eBay account. Try again or create an account."
+    UNKNOWN_ACCOUNT = "couldn't find this eBay account"
+    # "This password is incorrect. Try again or reset password."
+    WRONG_PASSWORD = "password is incorrect"
 
 
 class SearchResultsXPaths:
@@ -282,19 +306,24 @@ class SearchResultsXPaths:
     # Site texts and classes the card filters below key on.
     PLACEHOLDER_CARD_TITLE = "Shop on eBay"
     FEWER_WORDS_DIVIDER = "srp-river-answer--REWRITE_START"
+    # "No exact matches found" block, rendered before the list on a 0-results page.
+    NULL_SEARCH = "srp-save-null-search"
     BUY_IT_NOW = "Buy It Now"
     BIDS = " bid"
 
     RESULTS_LIST = f"//ul[{_has_class('srp-results')}]"
     # Real listings only. Skipped: carousels / filter / paging rows (srp-river-answer),
-    # the "Shop on eBay" placeholder card, and everything after the "Results matching
-    # fewer words" divider (those cards do not match the query).
+    # the "Shop on eBay" placeholder card, everything after the "Results matching
+    # fewer words" divider (those cards do not match the query), and every card on a
+    # "0 results" page: eBay still fills the list there, with fuzzy matches on parts
+    # of the query (seen live: "qzxvkj wplmnr 9h7t3" -> 14 bulbs and RAM sticks with "H9", "T7").
     ITEM_CARDS = (
         f"{RESULTS_LIST}/li[{_has_class('s-card')}][@data-listingid]"
         f"[not(starts-with(normalize-space(.//*[contains(@class, 's-card__title')]), '{PLACEHOLDER_CARD_TITLE}'))]"
         f"[not(preceding-sibling::li[contains(@class, '{FEWER_WORDS_DIVIDER}')])]"
+        f"[not(preceding::*[contains(@class, '{NULL_SEARCH}')])]"
     )
-    NO_RESULTS = "//*[contains(@class, 'srp-save-null-search')]"
+    NO_RESULTS = f"//*[contains(@class, '{NULL_SEARCH}')]"
     # Relative to a card; the keys are read by the card reader script in pages/search_results_page.py.
     CARD_FIELDS = {
         # The title also holds a visually hidden "Opens in a new window or tab" span.
@@ -337,6 +366,7 @@ SEED_UPPER_BOUND = 2**32
 class ScreenshotName:
     BOT_CHALLENGE = "bot_challenge"
     SESSION_READY = "session_ready_{label}"
+    SIGN_IN_REJECTED = "sign_in_rejected_{step}"
     SEARCH_PAGE = "search_{query}_page_{page}"
     CART_ITEM = "cart_item_{number}"
     CART_ITEM_FAILED = "cart_item_{number}_failed"
@@ -391,17 +421,25 @@ class PytestOption:
 class Expected:
     # Matched case-insensitively against the home page title.
     HOME_TITLE = "ebay"
+    # A query eBay has no listing for ("0 results"); its results list still holds fuzzy matches.
+    NO_MATCH_QUERY = "qzxvkj wplmnr 9h7t3"
+    NO_MATCH_MAX_PRICE = 1000
     ITEM_URL_PART = Endpoints.ITEM_PATH_PART
 
 
 class AssertMessage:
     NO_ITEMS_FOUND = "No items found for {query!r} <= {max_price:g}"
+    ITEMS_FOR_NO_MATCH = "eBay found nothing for {query!r}, but the search collected: {titles}"
     DUPLICATE_URLS = "Duplicate URLs: {urls}"
     PRICE_ABOVE_MAX = "{title!r} costs {price}, above {max_price:g}"
     CART_COUNT = "Cart shows {actual} items, expected {expected}"
     NOT_BACK_ON_SEARCH = "Expected to be back on the search results tab"
     ITEM_TABS_OPEN = "Item tabs should be closed"
     HEADER_SHOWS = "Header shows: {greeting!r}"
+    LOGIN_ERROR = "Expected a sign-in error containing {expected!r}, eBay showed {actual!r}"
+    LOGIN_STEP = "Expected the {expected} step of the sign-in form"
+    PASSWORD_NOT_CLEARED = "The password field should be emptied after a rejected password"
+    PASSWORD_NOT_MASKED = "The password field should be masked, its type is {actual!r}"
     # Spec 5.4: actual vs. budget, and how the budget was computed.
     CART_TOTAL_ABOVE_BUDGET = (
         "Cart {line} {total} is above the budget {budget:,.2f} "

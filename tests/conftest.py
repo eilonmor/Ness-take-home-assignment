@@ -39,6 +39,7 @@ from services.auth_service import AuthService, UserSession
 from utils.attachments import attach_screenshot, attach_trace, write_allure_environment
 from utils.files import safe_filename, timestamp
 from utils.html_report import screenshot_extra, trace_extra
+from utils.tracing import start_tracing
 
 log = get_logger("conftest")
 
@@ -170,7 +171,7 @@ def context(browser: Browser, settings: Settings, request: pytest.FixtureRequest
 
     trace_mode = settings.artifacts.trace
     if trace_mode != TraceMode.OFF:
-        context.tracing.start(title=request.node.nodeid, screenshots=True, snapshots=True, sources=True)
+        start_tracing(context, title=request.node.nodeid)
 
     yield context
 

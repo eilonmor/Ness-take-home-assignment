@@ -141,9 +141,9 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 **Consequences.**
 - ✅ The scenario runs without an account. Switching to a real sign-in is a `.env` change, not a code change.
 - ✅ A blocked run fails in about 2 s with "eBay served a bot check (title 'Error Page | eBay')…" instead of a timeout on a missing element.
-- ✅ The password never reaches a trace. A trace stores every `fill()` value in plain text, and failing traces are attached to the report. So the sign-in runs inside `tracing_paused` ([utils/tracing.py](../utils/tracing.py)), and [tests/unit/test_tracing.py](../tests/unit/test_tracing.py) checks the trace zip for the secret.
+- ✅ The password never reaches a trace. A trace stores every `fill()` value in plain text, and failing traces are attached to the report. So the password step runs inside `tracing_paused` ([utils/tracing.py](../utils/tracing.py)), and [tests/unit/test_tracing.py](../tests/unit/test_tracing.py) checks the trace zip for the secret. *Corrected in ADR-13:* the first version paused with `stop_chunk()`, which still kept the password in the network log of the form POST.
 - ❌ A trace of a real-login run starts after sign-in: the home page and the sign-in steps are dropped. A failed sign-in is still covered by the failure screenshot and the `LoginError` message.
-- ❌ Real sign-in is implemented but not verified end to end (no test account, and headless always hits the captcha). Only the unknown-account error path was checked by hand.
+- ❌ Real sign-in is implemented but not verified end to end (no test account, and headless always hits the captcha). Only the unknown-account error path was checked by hand. *Update:* there is now a test account, and ADR-13 adds live tests for the sign-in form.
 - ❌ Guest only: no saved addresses or watchlist. Prices and the cart total are those shown to an anonymous visitor in the detected region.
 
 ---
@@ -182,6 +182,7 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 - ❌ The locators target eBay's current `s-card` layout. The older `s-item` layout, which eBay may still serve in some A/B buckets, is not supported. All selectors are constants in one module, so a layout change is a local edit.
 - ❌ `max_price: 220` means 220 in whatever currency the visitor sees. Running from another country changes the meaning of the data rows. This is documented in the README.
 - ❌ Shipping is not part of the price check (the spec compares the item price).
+- *Update (2026-10):* on a "0 results" page eBay still fills the list with fuzzy matches on parts of the query (seen live: 14 bulbs and RAM sticks for "qzxvkj wplmnr 9h7t3"), with no "fewer words" divider before them. `ITEM_CARDS` now also skips every card after the "No exact matches found" block (`srp-save-null-search`). Before this fix, a search with no matches returned unrelated items.
 
 ---
 
@@ -354,3 +355,39 @@ The trace of the stealth run shows why: the **first** request, `GET https://www.
 - ✅ `BROWSER_CHANNEL` and the Israel timezone/currency are useful without stealth (no currency-mismatch warning anymore).
 - ❌ The repo now has code meant to hide automation, which ADR-6 rejects as a solution. It stays off by default and is documented here as a failed experiment, not as a way to run the tests.
 - ❌ CI stays red against live eBay. Proving the framework works still needs a headed run on a desktop, and the offline unit tests remain the reliable check for selectors and logic.
+
+---
+
+## ADR-13 — Sign-in form tests: step-level `LoginPage`, few failed attempts, a full stop of tracing
+
+**Context.** With a test account in `.env`, the sign-in form can be tested on its own: wrong password, unknown account, and so on. Probing it live (Playwright MCP, headed, 2026-10) showed:
+- Two steps on `signin.ebay.com`. Continue is handled inside the page (the URL stays the same). Sign in posts a form, and the answer is a new page: `/signin/s` with the error, or a redirect to the home page.
+- Errors appear in `#signin-error-msg`: "Oops, that's not a match." (empty username), "We couldn't find this eBay account…", "This password is incorrect…". A rejected password also empties the field.
+- On the username step the (hidden) `#pass` is already in the DOM. `LoginPage` waited on `#pass.or_(#signin-error-msg).first`, and `.first` picks the first match **in DOM order**, which is the hidden field. So a rejected username ended in a timeout reported as "2FA or a passkey prompt?" instead of eBay's error.
+- The username is trimmed and not case-sensitive. "Switch account" goes back to an empty username step. "Reset your password" leads straight to a captcha page.
+- A Playwright trace keeps request bodies in its network log **across chunks**. With the old `stop_chunk()`/`start_chunk()` pause, the form POST `pass=<password>` was still in the saved trace (shown by experiment, now covered by a unit test).
+
+**Decision.**
+- `LoginPage` exposes the steps: `submit_username`, `submit_password`, `switch_account`, and getters for the state (`error_text`, `is_on_username_step`, `is_on_password_step`, `account_shown`, `is_sign_in_enabled`, …). The steps **return** with eBay's inline error, so tests can check it. `sign_in` is built on top of them and still raises `LoginError` naming the rejected step.
+- The wait only looks at visible elements (`.filter(visible=True).first`). This needs Playwright ≥ 1.51.
+- `submit_password` waits for a navigation before reading the answer. Otherwise, on a second try, the error left from the first try would be read as the answer. If no new page comes (an answer inside the page), the step fails like any stuck step: bot-check detection first, then `LoginError`, not a bare Playwright timeout.
+- `LoginPage.submit_password` pauses tracing itself, so every caller is covered. `AuthService` no longer pauses (the two pauses would nest). `tracing_paused` now does a full `tracing.stop()` / `tracing.start()` with the fixture's options (`TRACE_START_OPTIONS`).
+- Live tests in [tests/e2e/test_login.py](../tests/e2e/test_login.py) (marker `login`) open the form from the home page header (`AuthService.open_sign_in_page`). Those that need the account take `account_login_page`, which depends on `account`, so without credentials they are skipped **before** anything is opened on eBay. Expected texts are fragments, in `LoginErrorText`.
+- Offline: [tests/unit/test_login_page.py](../tests/unit/test_login_page.py) runs `LoginPage` against a routed stand-in for the form, so the waiting logic is checked without eBay's rate limits.
+
+**Alternatives.**
+
+| Option | Why not |
+|---|---|
+| Keep `sign_in` only, and check that it raises `LoginError` | It can't check what eBay showed (the error text, which step, an emptied field), and one bad step hides the rest. |
+| Many data-driven wrong passwords (empty, too long, SQL-like, …) | Every failed attempt counts against the real account, and eBay locks it or sends it to a captcha. A run makes three failed attempts on purpose, and the offline tests cover the logic. |
+| Test "Reset your password" | It goes straight to a captcha, which is out of scope (MISSION_PLAN §5.1). |
+| Keep `stop_chunk()` and also hide the POST (route it, or strip the HAR entry) | More code for the same result. A full stop drops everything, network included, and needs nothing else. |
+
+**Consequences.**
+- ✅ A rejected username is reported with eBay's own message, in about a second instead of a 15 s timeout.
+- ✅ The password is out of the trace's snapshots **and** its network log, checked offline on every unit run.
+- ❌ Each live test opens the home page again, so `pytest -m login` is a burst that eBay's rate limit can cut off ("Error Page" at setup). Space the runs out, or run single tests.
+- ❌ A trace of a signed-in run starts after the sign-in, as before. Its title (the test id) is kept: the fixture starts tracing through `utils.tracing.start_tracing`, which remembers the title for the restart.
+- ❌ The live tests depend on eBay's English texts and on the account staying in good standing.
+- *Update (2026-10): passkey offer.* After a correct password eBay may show "Simplify your sign-in" (`accounts.ebay.com/acctsec/authn-register`) and offer to create a passkey. That needs a real authenticator, so `submit_password` clicks "Skip for now" (`#passkeys-cancel-btn`), which goes on to the home page, signed in. This is an optional step eBay offers, not a bot check, so declining it fits ADR-6. Before this, every signed-in run that got the offer failed with "2FA or a passkey prompt?". Covered offline by `test_passkey_offer_after_the_password_is_skipped`.

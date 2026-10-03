@@ -50,6 +50,20 @@ RESULTS_HTML = f"""
 """
 
 
+# A "0 results" page (seen live, 2026-10): the "No exact matches found" block comes
+# before the list, and the list is still filled with fuzzy matches.
+NO_MATCH_HTML = f"""
+<div id="srp-river-results" class="srp-river-results clearfix">
+  <div class="srp-river-answer srp-river-answer--SAVE_CARD"><div class="srp-save-null-search">
+    <h3 class="srp-save-null-search__heading">No exact matches found</h3></div></div>
+  <ul class="srp-results srp-list clearfix">
+    {card("201", "LAMP SOCKET T5 T10 HB3 H7", price_row(price("ILS 12.00")))}
+    {card("202", "Hynix 2GB Server RAM H9-T7", price_row(price("ILS 30.00")))}
+  </ul>
+</div>
+"""
+
+
 @pytest.fixture(scope="module")
 def settings() -> Settings:
     return load_settings("ci")
@@ -105,3 +119,12 @@ def test_auction_with_buy_it_now_uses_the_higher_price(items: dict[str, SearchRe
 
 def test_card_without_price_has_none(items: dict[str, SearchResultItem]) -> None:
     assert items["106"].price is None
+
+
+def test_no_items_on_a_zero_results_page(page: Page, settings: Settings) -> None:
+    """eBay fills a "0 results" page with fuzzy matches; none of them is a result for the query."""
+    page.set_content(NO_MATCH_HTML)
+    try:
+        assert SearchResultsPage(page, settings).items() == []
+    finally:
+        page.set_content(RESULTS_HTML)  # the module-scoped page is shared with the tests above

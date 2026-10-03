@@ -5,6 +5,10 @@
 #   limit            (optional, default 5) how many item URLs to collect at most
 #   budget_per_item  (optional, default max_price) cart check: total <= budget_per_item * items added
 #   id               (optional) test id shown in reports; derived from query + max_price if omitted
+#
+# Prices are in the currency eBay shows the visitor (ILS from Israel, ADR-7).
+# Each row runs 4 live tests (smoke, search, add to cart, full scenario):
+# keep the list short, eBay rate-limits bursts of runs.
 cases:
   - id: shoes-under-220
     query: shoes
@@ -15,3 +19,25 @@ cases:
     query: usb c cable
     max_price: 15
     limit: 3
+
+  # Non-ASCII query: eBay drops the accent in the page title ("Pokemon Cards for sale").
+  # The results mix auctions with Buy It Now (bid ILS 3, Buy It Now ILS 1,890):
+  # only the higher price may count against max_price.
+  - id: pokemon-cards-under-30
+    query: pokémon cards
+    max_price: 30
+    limit: 3
+
+  # Clothing: most listings ask for a size and a color before Add to cart (random variants).
+  - id: mens-t-shirt-under-25
+    query: mens t shirt
+    max_price: 25
+    limit: 3
+
+  # Decimal max_price, and budget_per_item above it: the cart can convert a
+  # foreign price at a slightly different rate than the search page did.
+  - id: lego-minifigures-under-24.5
+    query: lego minifigures
+    max_price: 24.5
+    limit: 2
+    budget_per_item: 26
