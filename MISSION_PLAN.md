@@ -170,11 +170,14 @@ Bugs to cover:
 
 > ✅ **Milestone 8:** `ReadMeAIBugs.md` lists ≥ 3 bugs, each with an explanation and fixed lines.
 
-### Stage 9 — README & Delivery (~20 min)
+### Stage 9 — README & Delivery (~20 min) — docs done, merge + fresh-clone check pending
 - [x] README: prerequisites, installation, run commands (per ENV/profile), how to generate/open reports.
-- [ ] Short architecture explanation (folder tree + layers).
-- [ ] Limitations/assumptions: guest login stub, captcha/bot detection (not handled, out of scope), regional pricing/currency, dynamic DOM, sponsored items, shipping not included in the price filter.
+- [x] Short architecture explanation (folder tree + layers).
+  - README "Architecture": layer table, annotated folder tree, how a run fits together, links to the ADRs. README also links [ReadMeAIBugs.md](ReadMeAIBugs.md).
+- [x] Limitations/assumptions: guest login stub, captcha/bot detection (not handled, out of scope), regional pricing/currency, dynamic DOM, sponsored items, shipping not included in the price filter.
+  - Dynamic DOM was the missing one: new "Dynamic pages and locators" section (markup-bound locators, no hard waits, live data, only verified on ebay.com from Israel).
 - [ ] Push to GitHub and confirm the repo is accessible.
+  - The repo is public (https://github.com/eilonmor/Ness-take-home-assignment, checked without signing in). Still to do: merge this stage into `main`.
 
 > ✅ **Milestone 9:** fresh clone → follow the README → tests run and the report opens.
 
