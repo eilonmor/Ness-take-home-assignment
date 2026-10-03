@@ -6,7 +6,7 @@ from playwright.sync_api import Page
 
 from core.base_page import BasePage
 from core.config import Settings
-from core.constants import Endpoints
+from core.constants import CART_URL_PARTS, Endpoints
 from core.constants import HeaderLocators as Locators
 
 
@@ -29,6 +29,7 @@ class Header(BasePage):
         self.search_input = self.root.locator(Locators.SEARCH_INPUT)
         self.search_button = self.root.locator(Locators.SEARCH_BUTTON)
         self.cart_badge = self.root.locator(Locators.CART_BADGE)
+        self.cart_link = self.root.locator(Locators.CART_LINK)
 
     def is_signed_in(self) -> bool:
         self.wait_until_visible(self.identity)
@@ -53,6 +54,13 @@ class Header(BasePage):
         self.fill(self.search_input, query)
         with self.expect_navigation(lambda url: Endpoints.SEARCH_PATH_PART in url):
             self.click(self.search_button)
+
+    def open_cart(self) -> None:
+        """Click the cart icon and wait for the cart page (on its own host, cart.ebay.com)."""
+        self.dismiss_ship_to_dialog()
+        self.log.info("Opening the cart")
+        with self.expect_navigation(lambda url: any(part in url for part in CART_URL_PARTS)):
+            self.click(self.cart_link)
 
     def cart_count(self) -> int:
         if self.cart_badge.count() == 0:

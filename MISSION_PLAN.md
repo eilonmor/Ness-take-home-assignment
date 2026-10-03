@@ -124,18 +124,25 @@ Login is required, but a **guest / stub** login is allowed (document it as a lim
 
 > ✅ **Milestone 4:** `search_items_by_name_under_price("shoes", 220, 5)` returns ≤ 5 URLs, all priced ≤ 220; price parser unit tests pass.
 
-### Stage 5 — Add Items to Cart (~45 min)
-- [ ] `ItemPage` + `VariantSelector` component: detect variant dropdowns/buttons, pick a random **available** value, set quantity.
-- [ ] Handle dynamic cases: out-of-stock options, overlays/popups, "See all options", items opened in a new tab.
-- [ ] Click "Add to cart", close the cart dialog, navigate back.
-- [ ] Screenshot + log per item, attached to Allure.
+### Stage 5 — Add Items to Cart (~45 min) ✅ DONE
+- [x] `ItemPage` + `VariantSelector` component: detect variant dropdowns/buttons, pick a random **available** value, set quantity.
+  - `services/cart_service.py` (`CartService.add_items_to_cart()` + `add_items()`), `pages/item_page.py`, `components/variant_selector.py`, `components/added_to_cart_dialog.py`. Quantity stays at 1 so the Stage 6 budget check holds; variant picks come from a logged seed (`RANDOM_SEED` replays them).
+- [x] Handle dynamic cases: out-of-stock options, overlays/popups, "See all options", items opened in a new tab.
+  - Out-of-stock values are skipped and dimensions are picked in order (a pick changes what the next one offers). "See all options" was not found on live pages and is not handled (ADR-8).
+- [x] Click "Add to cart", close the cart dialog, navigate back.
+  - Each item opens in its own tab, which is closed afterwards: the search tab is never left.
+- [x] Screenshot + log per item, attached to Allure.
 
 > ✅ **Milestone 5:** every URL from Stage 4 is added to the cart, with one screenshot per item in the report.
 
-### Stage 6 — Assert Cart Total (~25 min)
-- [ ] `CartPage`: open the cart and read the subtotal with the price parser.
-- [ ] Compute `budget_per_item * items_count` and assert `total <= budget`, with a clear failure message (actual vs. budget).
-- [ ] Screenshot + trace of the cart page.
+### Stage 6 — Assert Cart Total (~25 min) ✅ DONE
+- [x] `CartPage`: open the cart and read the subtotal with the price parser.
+  - `pages/cart_page.py`, `Header.open_cart()`, `CartService.assert_cart_total_not_exceeds()` + `check_cart_total()`; e2e test `tests/e2e/test_cart_total.py`.
+  - Reads the order summary's "Items (n)" row by default (item prices only, like the search filter); `cart.total_line: subtotal` checks items + shipping instead (ADR-10).
+- [x] Compute `budget_per_item * items_count` and assert `total <= budget`, with a clear failure message (actual vs. budget).
+  - Raises `CartBudgetExceededError` (an `AssertionError`): `Cart items ILS 675.50 is above the budget 660.00 (220 per item x 3 items), over by 15.50`. Compared in cents.
+- [x] Screenshot + trace of the cart page.
+  - Full-page screenshot + "Cart total vs. budget" attachment before the verdict; cart steps grouped as "Cart page" in the trace; `TRACE=on` keeps the trace of a passing run.
 
 > ✅ **Milestone 6:** the assertion passes for the full scenario; a forced failure shows a readable message.
 

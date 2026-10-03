@@ -251,3 +251,39 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 - ✅ Env var names, screenshot names and report labels are consistent everywhere they are used.
 - ❌ Opening a page object no longer shows its selectors inline; jump to the `*Locators` group (one click in an IDE).
 - ❌ Log, exception and Allure step texts stay inline on purpose: they are prose, not values, and are easier to read at the call site.
+
+---
+
+## ADR-10 — Cart check: the "Items" row of the order summary, read on the cart page
+
+**Context.** Spec 5.4 asks to open the cart, read the subtotal/total as the site shows it, and assert it is not above `budget_per_item * items_count`, with a screenshot/trace of the cart page. Probing the live cart (`cart.ebay.com`, 2026-10, guest, from Israel) showed:
+- The cart is on its own host. The header cart icon (`.gh-cart a.gh-flyout__target`) links to it. Other header links contain `cart.ebay.com` too, inside their sign-in `?ru=` parameter.
+- The order summary (`[data-test-id=cart-summary]`) has an "Item (1)" / "Items (n)" row (`ITEM_TOTAL`) and a "Subtotal" row (`SUBTOTAL`). Both are in the **same currency as the search results** (ILS 210.70). The subtotal adds shipping when eBay can quote it.
+- Each line shows the price in the **listing's** currency first, then the converted one: "US $68.99 (ILS 210.70)".
+- eBay's own `data-test-id` attributes are on every part the check needs. The layout classes around them are generic (`val-col`, `table`).
+- Opening the cart is one more navigation that can get a bot check (it did once during probing).
+
+**Decision.**
+- `CartService.assert_cart_total_not_exceeds(budget_per_item, items_count)` ([services/cart_service.py](../services/cart_service.py)) opens the cart through `Header.open_cart()`, then `CartPage` ([pages/cart_page.py](../pages/cart_page.py)) waits for the summary and reads the total with the shared price parser.
+- The total checked is the **"Items" row** by default: the sum of the item prices, which is what the search price filter compared (ADR-7, shipping excluded). `cart.total_line: subtotal` in the profile switches the check to the subtotal row (items plus shipping) for a stricter run.
+- The comparison is in **cents** (`round(total, 2) <= round(budget, 2)`), so 3 × 0.10 is not "above" 0.30 through float error.
+- A failure raises `CartBudgetExceededError`, a subclass of `AssertionError`, so pytest reports a failed check and not a broken test. The message has the actual value, the budget, how it was computed, and the excess: `Cart items ILS 675.50 is above the budget 660.00 (220 per item x 3 items), over by 15.50`.
+- `check_cart_total()` does the same reading without the assertion and returns a `CartCheck` (total, budget, cart lines) for tests and reports. `assert_cart_total_not_exceeds()` is a thin wrapper over it.
+- Evidence comes before the verdict: a full-page screenshot of the cart and a "Cart total vs. budget" text attachment (total, budget, verdict, one row per cart line) are saved before the check can fail. The cart steps are wrapped in a `tracing.group("Cart page")`, so they show as one labelled block in the trace viewer. `TRACE=on` (new env override) keeps the trace of a passing run too; by default (`retain-on-failure`) it is kept when the run fails.
+- A cart line count that differs from `items_count` is logged as a warning. The e2e test asserts it, but the spec's function only compares totals.
+
+**Alternatives.**
+
+| Option | Why not |
+|---|---|
+| Check the "Subtotal" row by default | It includes shipping, which the search never checked (ADR-7). A run would fail on a cheap item with expensive shipping, for a reason the search could not prevent. Kept as an opt-in. |
+| Sum the line prices | Lines are in the listing's currency ("US $68.99") with the converted price in brackets. The summary row is already in the search's currency and is what eBay shows as the total. |
+| `page.goto("https://cart.ebay.com")` | Another host than `base_url`, and a cold deep link is more likely to get a bot check. The header link is what a user clicks. |
+| Plain `assert` in the test | The spec defines the check as a function; keeping it in the service gives one message format and one evidence path for every caller. |
+| Save a separate trace chunk for the cart page only | Ending a chunk mid-test would cut the failure trace the fixture saves at the end. A trace group labels the cart steps without splitting the trace. |
+
+**Consequences.**
+- ✅ The cart locators are tested offline against copied markup ([tests/unit/test_cart_page.py](../tests/unit/test_cart_page.py)), and the check (pass, equal, above budget, subtotal line, message format, trace group) with stubbed pages ([tests/unit/test_cart_service.py](../tests/unit/test_cart_service.py)).
+- ✅ A failing check reads as actual vs. budget in the pytest output and the Allure report, next to the cart screenshot.
+- ❌ With the default `items` line, shipping costs never fail the check. This is documented in the README.
+- ❌ The cart page was probed as a guest with one listing that does not ship to Israel (no shipping row). The subtotal row is read the same way, but its shipping content was not seen live.

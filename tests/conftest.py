@@ -6,6 +6,7 @@
 
 One-off overrides on top of the profile:
     HEADLESS=false  SLOW_MO=250  BASE_URL=https://www.ebay.co.uk  BROWSER=firefox
+    TRACE=on  (keep the trace of a passing run too)
 (only Chromium is installed by default; for the others run
  ``python -m playwright install firefox webkit``)
 

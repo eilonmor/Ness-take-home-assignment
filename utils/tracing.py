@@ -25,3 +25,16 @@ def tracing_paused(context: BrowserContext, tracing_active: bool) -> Iterator[No
         yield
     finally:
         context.tracing.start_chunk()
+
+
+@contextmanager
+def tracing_group(context: BrowserContext, name: str, tracing_active: bool) -> Iterator[None]:
+    """Group the actions inside the block under ``name`` in the trace viewer, e.g. "Cart page"."""
+    if not tracing_active:
+        yield
+        return
+    context.tracing.group(name)
+    try:
+        yield
+    finally:
+        context.tracing.group_end()

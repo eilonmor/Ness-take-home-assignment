@@ -9,7 +9,7 @@ from core.config import PROJECT_ROOT, available_profiles, load_settings
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("ENV", "BASE_URL", "BROWSER", "HEADLESS", "SLOW_MO", "EBAY_GUEST", "EBAY_USERNAME", "EBAY_PASSWORD", "RANDOM_SEED"):
+    for name in ("ENV", "BASE_URL", "BROWSER", "HEADLESS", "SLOW_MO", "EBAY_GUEST", "EBAY_USERNAME", "EBAY_PASSWORD", "RANDOM_SEED", "TRACE"):
         monkeypatch.delenv(name, raising=False)
     # A developer's local .env must not leak into (or out of) these tests.
     monkeypatch.setattr(config, "load_dotenv", lambda *args, **kwargs: False)
@@ -187,6 +187,7 @@ def test_cart_defaults_come_from_profile() -> None:
 
     assert cart.random_seed is None
     assert cart.variant_attempts == 3
+    assert cart.total_line == "items"
 
 
 def test_random_seed_env_variable_overrides_profile(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -207,6 +208,7 @@ def test_random_seed_env_variable_must_be_an_integer(monkeypatch: pytest.MonkeyP
     [
         ("cart:\n  random_seed: 'x'\n", "cart.random_seed must be an integer or null"),
         ("cart:\n  variant_attempts: 0\n", "cart.variant_attempts must be a positive integer"),
+        ("cart:\n  total_line: total\n", "cart.total_line must be one of"),
     ],
 )
 def test_cart_settings_are_validated(
@@ -218,3 +220,16 @@ def test_cart_settings_are_validated(
 
     with pytest.raises(ValueError, match=message):
         load_settings("broken")
+
+
+def test_trace_env_variable_overrides_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRACE", "ON")
+
+    assert load_settings("ci").artifacts.trace == "on"
+
+
+def test_trace_env_variable_is_validated(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRACE", "always")
+
+    with pytest.raises(ValueError, match="artifacts.trace must be one of"):
+        load_settings("ci")

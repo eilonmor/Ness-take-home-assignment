@@ -34,3 +34,12 @@ Design rationale: [docs/DECISIONS.md](docs/DECISIONS.md) ADR-7.
 - Only eBay's current variant dropdowns are supported; native `<select>` pickers and image swatches from older layouts are not.
 
 Design rationale: [docs/DECISIONS.md](docs/DECISIONS.md) ADR-8.
+
+### Cart total check
+- **What is checked:** `CartService.assert_cart_total_not_exceeds(budget_per_item, items_count)` ([services/cart_service.py](services/cart_service.py)) opens the cart from the header and checks that the cart total is ≤ `budget_per_item × items_count`. `budget_per_item` comes from the data row (`budget_per_item`, default `max_price`).
+- **Item prices, not shipping, by default.** The total read is the order summary's "Items (n)" row, the same item-price-only view the search filter used. Set `cart.total_line: subtotal` in a profile to check the subtotal (items + shipping) instead.
+- **Currency:** the summary is in the same currency as the search results (e.g. ILS), so the budget is compared in that currency. Cart lines also show the listing's own currency ("US $68.99 (ILS 210.70)"); these are only reported, not summed.
+- **Evidence:** a full-page cart screenshot and a "Cart total vs. budget" attachment (total, budget, verdict, cart lines) are saved before the check can fail. A failure reads like `Cart items ILS 675.50 is above the budget 660.00 (220 per item x 3 items), over by 15.50`.
+- **Trace:** kept on failure by default; run with `TRACE=on` to keep it for a passing run too. The cart steps are grouped as "Cart page" in `playwright show-trace`.
+
+Design rationale: [docs/DECISIONS.md](docs/DECISIONS.md) ADR-10.

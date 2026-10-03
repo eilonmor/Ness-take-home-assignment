@@ -44,8 +44,18 @@ class TraceMode(StrEnum):
     RETAIN_ON_FAILURE = "retain-on-failure"
 
 
+class CartTotalLine(StrEnum):
+    """Which order-summary row the cart budget check reads (``cart.total_line``)."""
+
+    # "Items (n)": the item prices only, like the search price filter.
+    ITEMS = "items"
+    # "Subtotal": items plus shipping, when eBay can quote shipping.
+    SUBTOTAL = "subtotal"
+
+
 BROWSERS = tuple(browser.value for browser in BrowserName)
 TRACE_MODES = tuple(mode.value for mode in TraceMode)
+CART_TOTAL_LINES = tuple(line.value for line in CartTotalLine)
 TRUE_VALUES = ("1", "true", "yes", "on")
 FALSE_VALUES = ("0", "false", "no", "off")
 
@@ -60,6 +70,7 @@ class EnvVar:
     SLOW_MO = "SLOW_MO"
     GUEST = "EBAY_GUEST"
     RANDOM_SEED = "RANDOM_SEED"
+    TRACE = "TRACE"
     USERNAME = "EBAY_USERNAME"
     PASSWORD = "EBAY_PASSWORD"
 
@@ -173,6 +184,8 @@ class HeaderLocators:
     SEARCH_BUTTON = "#gh-search-btn"
     # Number of items in the cart; not rendered while the cart is empty.
     CART_BADGE = ".gh-cart .gh-badge"
+    # Not a[href*='cart.ebay']: the sign-in links carry the cart URL in their ?ru= param.
+    CART_LINK = ".gh-cart a.gh-flyout__target"
 
 
 class AddedToCartDialogLocators:
@@ -224,6 +237,23 @@ class ItemPageValues:
     QUANTITY = "1"
     PRICE_NOT_SHOWN = "n/a"
     CART_PAGE_OPENED = "Opened the cart page"
+
+
+class CartPageLocators:
+    """cart.ebay.com. eBay's own ``data-test-id`` hooks, not its layout classes."""
+
+    SUMMARY = "[data-test-id='cart-summary']"
+    # Order summary rows, in the currency the search shows (e.g. "ILS 210.70").
+    # "Item (1)" / "Items (3)": sum of the item prices.
+    ITEM_TOTAL = "[data-test-id='ITEM_TOTAL']"
+    SUBTOTAL = "[data-test-id='SUBTOTAL']"
+    # One per listing, grouped by seller (cart-bucket).
+    LINE_ITEM = "[data-test-id='cart-bucket'] [data-test-id='list-summary']"
+    LINE_TITLE = "[data-test-id='cart-item-link']"
+    # Relative to a line. The listing's currency first, then the converted price:
+    # "US $68.99 (ILS 210.70)". The summary rows use the converted one.
+    LINE_PRICE = ".price-details"
+    LINE_QUANTITY = ".quantity input"
 
 
 class LoginPageLocators:
@@ -300,6 +330,7 @@ class ScreenshotName:
     SEARCH_PAGE = "search_{query}_page_{page}"
     CART_ITEM = "cart_item_{number}"
     CART_ITEM_FAILED = "cart_item_{number}_failed"
+    CART_PAGE = "cart_page"
 
 
 class AttachmentName:
@@ -307,6 +338,7 @@ class AttachmentName:
     FAILURE_SCREENSHOT = "Failure screenshot (page {index})"
     SEARCH_ITEMS = "Items found for '{query}' (<= {max_price:g})"
     CART_ITEMS = "Items added to the cart"
+    CART_CHECK = "Cart total vs. budget"
 
 
 class AllureFeature:
@@ -337,3 +369,9 @@ class AssertMessage:
     NOT_BACK_ON_SEARCH = "Expected to be back on the search results tab"
     ITEM_TABS_OPEN = "Item tabs should be closed"
     HEADER_SHOWS = "Header shows: {greeting!r}"
+    # Spec 5.4: actual vs. budget, and how the budget was computed.
+    CART_TOTAL_ABOVE_BUDGET = (
+        "Cart {line} {total} is above the budget {budget:,.2f} "
+        "({budget_per_item:g} per item x {items_count} items), over by {excess:,.2f}"
+    )
+    CART_LINES = "Cart has {actual} lines, expected {expected}"

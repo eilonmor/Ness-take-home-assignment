@@ -22,7 +22,7 @@ timeouts:
 
 artifacts:
   dir: reports
-  trace: retain-on-failure  # on | off | retain-on-failure
+  trace: retain-on-failure  # on | off | retain-on-failure. Env: TRACE (TRACE=on keeps the trace of a passing run)
   screenshot_on_failure: true
 
 data:
@@ -34,6 +34,7 @@ search:
 cart:
   random_seed: null     # int for reproducible variant choices; null = new seed per run (logged). Env: RANDOM_SEED
   variant_attempts: 3   # random variant combinations tried per item before it fails
+  total_line: items     # cart row checked against the budget: items (item prices, like the search filter) | subtotal (+ shipping)
 
 # eBay sign-in is behind captcha/bot checks, so runs are guest by default.
 # Real login is opt-in from .env: EBAY_GUEST=false + EBAY_USERNAME / EBAY_PASSWORD.
