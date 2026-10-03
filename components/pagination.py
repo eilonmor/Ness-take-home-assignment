@@ -27,5 +27,5 @@ class Pagination(BasePage):
     def go_next(self) -> None:
         target = self.current_page + 1
         self.log.info("Going to results page %d", target)
-        self.click(self.next_link)
-        self.wait_for_navigation(lambda url: query_param(url, PAGE_PARAM) == str(target))
+        with self.expect_navigation(lambda url: query_param(url, PAGE_PARAM) == str(target)):
+            self.click(self.next_link)

@@ -49,8 +49,8 @@ class Header(BasePage):
         self.dismiss_ship_to_dialog()
         self.log.info("Searching for %r", query)
         self.fill(self.search_input, query)
-        self.click(self.search_button)
-        self.wait_for_navigation(lambda url: "/sch/" in url)
+        with self.expect_navigation(lambda url: "/sch/" in url):
+            self.click(self.search_button)
 
     def dismiss_ship_to_dialog(self) -> None:
         """Close the modal that asks to confirm the shipping postcode; it blocks every click."""

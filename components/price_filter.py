@@ -36,6 +36,6 @@ class PriceFilter(BasePage):
         value = str(math.ceil(max_price))
         self.log.info("Applying the price filter: max %s", value)
         self.fill(self.max_input, value)
-        self.click(self.submit_button)
         # eBay navigates a moment after the click, to a URL with _udhi=<value>.
-        self.wait_for_navigation(lambda url: query_param(url, MAX_PRICE_PARAM) == value)
+        with self.expect_navigation(lambda url: query_param(url, MAX_PRICE_PARAM) == value):
+            self.click(self.submit_button)

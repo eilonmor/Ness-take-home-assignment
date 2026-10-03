@@ -164,7 +164,7 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 - All card fields are read with the XPaths in [pages/search_results_page.py](../pages/search_results_page.py), evaluated in the page in **one** `evaluate_all` call per page.
 - Item URLs are returned without the query string (`https://www.ebay.com/itm/<id>`), which also makes duplicates across pages easy to spot.
 - `max_price` is compared in the currency eBay displays. A mismatch with the profile currency is logged as a warning, not treated as an error.
-- Click-started navigations go through `BasePage.wait_for_navigation()`, which also stops waiting on a bot-check redirect and raises `BotChallengeError`.
+- Click-started navigations are wrapped in `BasePage.expect_navigation()`. It waits for the navigation that the click starts, not just for a matching URL (a second search from a results page already matches `/sch/`). A bot-check redirect also ends the wait and raises `BotChallengeError`.
 
 **Alternatives.**
 

@@ -90,11 +90,14 @@ def parse_amount(text: str) -> float:
 
 
 def detect_currency(text: str) -> str | None:
+    """An explicit code wins over a symbol: "CAD $15.00" is CAD, not USD."""
+    match = _CURRENCY_CODE.search(text)
+    if match:
+        return match.group(1)
     for symbol, code in CURRENCY_SYMBOLS:
         if symbol in text:
             return code
-    match = _CURRENCY_CODE.search(text)
-    return match.group(1) if match else None
+    return None
 
 
 def _single_amount(part: str, original: str | None) -> float:

@@ -114,8 +114,9 @@ Login is required, but a **guest / stub** login is allowed (document it as a lim
 ### Stage 4 — Search with Price Condition (~50 min) ✅ DONE
 - [x] `SearchResultsPage`: run the search and apply the min/max price filter (fall back to URL params such as `_udhi` if the UI filter is missing).
   - `services/search_service.py` (`SearchService.search_items_by_name_under_price()` + `find_items_under_price()`), `pages/search_results_page.py`, `components/price_filter.py`; `Header.search()` searches from the current page (a cold deep link to `/sch/` gets the bot page).
-- [x] XPath locators for item cards, title, price, link; skip sponsored/placeholder cards ("Shop on eBay").
-  - Placeholder cards, carousels and "Results matching fewer words" cards are skipped. Auction-only cards are skipped too (they cannot be added to a cart). Sponsored cards are kept: they are real matches (ADR-7).
+- [x] XPath locators for item cards, title, price, link; skip placeholder cards ("Shop on eBay").
+  - Placeholder cards, carousels and "Results matching fewer words" cards are skipped. Auction-only cards are skipped too (they cannot be added to a cart).
+  - Deviation from the original plan: sponsored cards are **kept**, not skipped. They are real listings that match the query and price, and the new layout hides the "Sponsored" label behind obfuscated markup (ADR-7).
 - [x] `utils/price_parser.py`: handles currency symbols, commas, ranges ("$10.00 to $25.00" → take the upper bound when checking against max), and "free"/missing price.
 - [x] Pagination component: click "Next" until `limit` is reached or there is no next page (capped by `search.max_pages` in the profile).
 - [x] Unit tests for the price parser (plus offline XPath tests against copied card markup, URL helpers, match rules).

@@ -77,7 +77,10 @@ def test_parse_amount_conventions(text: str, expected: float) -> None:
     assert parse_amount(text) == pytest.approx(expected)
 
 
-@pytest.mark.parametrize(("text", "currency"), [("AU $3", "AUD"), ("₪50", "ILS"), ("12.00", None)])
+@pytest.mark.parametrize(
+    ("text", "currency"),
+    [("AU $3", "AUD"), ("₪50", "ILS"), ("12.00", None), ("CAD $15.00", "CAD"), ("HKD $20.00", "HKD"), ("US $5", "USD")],
+)
 def test_detect_currency(text: str, currency: str | None) -> None:
     assert detect_currency(text) == currency
 
