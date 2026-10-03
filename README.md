@@ -67,6 +67,8 @@ Settings are layered; each layer overrides the one before it:
 | `HEADLESS` | `false` | Show or hide the browser |
 | `SLOW_MO` | `250` | Delay between actions (ms) |
 | `BROWSER` | `firefox` | `chromium`, `firefox` or `webkit` (install the extra browsers with `python -m playwright install firefox webkit`) |
+| `BROWSER_CHANNEL` | `chrome` | Drive an installed Chrome (`chrome`) or Edge (`msedge`) instead of the bundled Chromium |
+| `STEALTH` | `true` | Experimental, off by default: hide Chromium's automation flags. Does **not** get past eBay's bot check (see [Bot detection](#bot-detection)) |
 | `BASE_URL` | `https://www.ebay.co.uk` | Another eBay site |
 | `TRACE` | `on` | Keep the Playwright trace of passing runs too (default: only failed runs) |
 | `RANDOM_SEED` | `12345` | Replay the random variant picks of an earlier run (the seed is logged) |
@@ -136,8 +138,10 @@ eBay protects sign-in with captcha and bot checks, so runs start as a **guest by
 ### Bot detection
 - Headless runs are blocked by eBay ("Error Page" / "Security Measure" captcha). Run headed: the default `dev` profile, or `HEADLESS=false`.
 - Many runs in a short time are rate-limited even when headed. The run then fails fast with `eBay served a bot check (...)` and a screenshot. Wait a few minutes before retrying.
+- This makes it hard to check that the project works and to debug it: CI (headless) can't show a green run against live eBay, and a retry right after a failure is often blocked before it reaches the code under test. The offline unit tests (`pytest tests/unit`) cover the selectors and logic without eBay.
+- Hiding the automation flags doesn't help. With `STEALTH=true`, installed Chrome/Edge, Firefox or WebKit, headless runs still get the bot page: eBay rejects the very first request (HTTP 403), before any page script runs.
 
-Design rationale: [docs/DECISIONS.md](docs/DECISIONS.md) ADR-6.
+Design rationale: [docs/DECISIONS.md](docs/DECISIONS.md) ADR-6, and the experiment in ADR-12.
 
 ### Search and prices
 - **Currency follows your location.** eBay shows prices in the visitor's currency (e.g. ILS from Israel), whatever the profile's `currency` says. `max_price` in [data/search_cases.yaml](data/search_cases.yaml) is compared in the displayed currency, and a mismatch is logged as a warning.

@@ -3,7 +3,8 @@
 Resolution order (later wins):
     config/base.yaml  ->  config/<ENV>.yaml  ->  environment variables
                                                 (BASE_URL, BROWSER, HEADLESS, SLOW_MO,
-                                                 EBAY_GUEST, RANDOM_SEED, TRACE)
+                                                 EBAY_GUEST, RANDOM_SEED, TRACE,
+                                                 STEALTH, BROWSER_CHANNEL)
 
 The profile is chosen by the ``--env`` pytest option, else the ``ENV``
 environment variable (also read from ``.env``), else ``dev``.
@@ -46,6 +47,10 @@ class BrowserSettings:
     slow_mo_ms: int
     viewport_width: int
     viewport_height: int
+    # Experimental (bot-protection branch): Chromium hardening from core.stealth.
+    stealth: bool = False
+    # Installed browser to drive instead of the bundled one, e.g. "chrome", "msedge".
+    channel: str | None = None
 
 
 @dataclass(frozen=True)
@@ -169,6 +174,10 @@ def _env_overrides() -> dict[str, Any]:
         browser["name"] = browser_name.lower()
     if (headless := _env_bool(EnvVar.HEADLESS)) is not None:
         browser["headless"] = headless
+    if (stealth := _env_bool(EnvVar.STEALTH)) is not None:
+        browser["stealth"] = stealth
+    if channel := _env(EnvVar.BROWSER_CHANNEL):
+        browser["channel"] = channel.lower()
     if slow_mo := _env(EnvVar.SLOW_MO):
         browser["slow_mo_ms"] = int(slow_mo)
     if browser:
@@ -236,6 +245,8 @@ def _build_settings(env: str, raw: dict[str, Any]) -> Settings:
             slow_mo_ms=int(browser["slow_mo_ms"]),
             viewport_width=int(browser["viewport"]["width"]),
             viewport_height=int(browser["viewport"]["height"]),
+            stealth=_profile_bool(browser.get("stealth", False), "browser.stealth"),
+            channel=browser.get("channel") or None,
         ),
         timeouts=TimeoutSettings(
             default_ms=int(timeouts["default_ms"]),

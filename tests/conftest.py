@@ -30,6 +30,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, expect, sync_playwright
 
+from core import stealth
 from core.config import Settings, load_settings
 from core.constants import ArtifactFiles, AttachmentName, HtmlReport, PytestOption, TraceMode
 from core.data_loader import load_search_cases
@@ -95,6 +96,8 @@ def _environment(settings: Settings) -> dict[str, str]:
         "Base URL": settings.base_url,
         "Browser": settings.browser.name,
         "Headless": str(settings.browser.headless),
+        "Stealth": str(settings.browser.stealth),
+        "Channel": settings.browser.channel or "bundled",
         "Locale": settings.locale,
         "Currency": settings.currency,
         "Session": "guest" if settings.auth.guest else "signed in",
@@ -146,7 +149,7 @@ def playwright() -> Iterator[Playwright]:
 @pytest.fixture(scope="session")
 def browser(playwright: Playwright, settings: Settings) -> Iterator[Browser]:
     browser_type = getattr(playwright, settings.browser.name)
-    browser = browser_type.launch(headless=settings.browser.headless, slow_mo=settings.browser.slow_mo_ms)
+    browser = browser_type.launch(**stealth.launch_options(settings))
     yield browser
     browser.close()
 
@@ -159,7 +162,9 @@ def context(browser: Browser, settings: Settings, request: pytest.FixtureRequest
         locale=settings.locale,
         timezone_id=settings.timezone_id,
         viewport={"width": settings.browser.viewport_width, "height": settings.browser.viewport_height},
+        **stealth.context_options(browser, settings),
     )
+    stealth.apply(context, settings)
     context.set_default_timeout(settings.timeouts.default_ms)
     context.set_default_navigation_timeout(settings.timeouts.navigation_ms)
 
