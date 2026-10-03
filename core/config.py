@@ -3,7 +3,7 @@
 Resolution order (later wins):
     config/base.yaml  ->  config/<ENV>.yaml  ->  environment variables
                                                 (BASE_URL, BROWSER, HEADLESS, SLOW_MO,
-                                                 EBAY_GUEST, RANDOM_SEED)
+                                                 EBAY_GUEST, RANDOM_SEED, TRACE)
 
 The profile is chosen by the ``--env`` pytest option, else the ``ENV``
 environment variable (also read from ``.env``), else ``dev``.
@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 from core.constants import (
     BASE_PROFILE,
     BROWSERS,
+    CART_TOTAL_LINES,
     DEFAULT_ENV,
     DOTENV_FILE,
     FALSE_VALUES,
@@ -92,6 +93,8 @@ class CartSettings:
     random_seed: int | None
     # Random variant combinations to try per item before giving up on it.
     variant_attempts: int
+    # Order-summary row compared with the budget: "items" or "subtotal" (CartTotalLine).
+    total_line: str
 
 
 @dataclass(frozen=True)
@@ -174,6 +177,8 @@ def _env_overrides() -> dict[str, Any]:
         overrides["auth"] = {"guest": guest}
     if random_seed := _env(EnvVar.RANDOM_SEED):
         overrides["cart"] = {"random_seed": _parse_int(random_seed, EnvVar.RANDOM_SEED)}
+    if trace := _env(EnvVar.TRACE):
+        overrides["artifacts"] = {"trace": trace.lower()}
     return overrides
 
 
@@ -257,12 +262,14 @@ def _build_search(search: dict[str, Any]) -> SearchSettings:
 
 
 def _build_cart(cart: dict[str, Any]) -> CartSettings:
-    seed, attempts = cart["random_seed"], cart["variant_attempts"]
+    seed, attempts, total_line = cart["random_seed"], cart["variant_attempts"], cart["total_line"]
     if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
         raise ValueError(f"cart.random_seed must be an integer or null, got {seed!r}")
     if isinstance(attempts, bool) or not isinstance(attempts, int) or attempts < 1:
         raise ValueError(f"cart.variant_attempts must be a positive integer, got {attempts!r}")
-    return CartSettings(random_seed=seed, variant_attempts=attempts)
+    if total_line not in CART_TOTAL_LINES:
+        raise ValueError(f"cart.total_line must be one of {CART_TOTAL_LINES}, got {total_line!r}")
+    return CartSettings(random_seed=seed, variant_attempts=attempts, total_line=total_line)
 
 
 def _build_auth(auth: dict[str, Any]) -> AuthSettings:

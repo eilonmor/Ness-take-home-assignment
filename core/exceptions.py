@@ -17,3 +17,14 @@ class AddToCartError(RuntimeError):
 
 class VariantSelectionError(AddToCartError):
     """The random variant combination could not be used; another one may work."""
+
+
+class CartReadError(RuntimeError):
+    """The cart page did not show a readable total."""
+
+
+class CartBudgetExceededError(AssertionError):
+    """The cart total is above budget_per_item * items_count (spec 5.4).
+
+    An ``AssertionError``, so pytest reports a failed check, not a broken test.
+    """

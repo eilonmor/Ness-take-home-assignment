@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Take-home assignment: Playwright + Python E2E scenario against live eBay (search under a price → add items to cart → assert cart total ≤ budget × count), built as a self-developed Page Object Model with Allure reports. [MISSION_PLAN.md](MISSION_PLAN.md) is the spec and stage tracker (stages 0–4 done, 5+ pending) — check it before starting work and tick off items when a stage lands. Non-obvious design choices are recorded as ADRs in [docs/DECISIONS.md](docs/DECISIONS.md); add a new ADR (Context → Decision → Alternatives → Consequences) for any comparable decision.
+Take-home assignment: Playwright + Python E2E scenario against live eBay (search under a price → add items to cart → assert cart total ≤ budget × count), built as a self-developed Page Object Model with Allure reports. [MISSION_PLAN.md](MISSION_PLAN.md) is the spec and stage tracker (stages 0–6 done, 7+ pending) — check it before starting work and tick off items when a stage lands. Non-obvious design choices are recorded as ADRs in [docs/DECISIONS.md](docs/DECISIONS.md); add a new ADR (Context → Decision → Alternatives → Consequences) for any comparable decision.
 
 ## Commands
 
@@ -26,7 +26,7 @@ allure serve reports/allure-results      # needs the separate Allure CLI; pytest
 playwright show-trace reports/traces/<file>.zip
 ```
 
-`pytest-playwright` is intentionally **not** used (ADR-1): `--headed`, `--browser`, `--slowmo` don't exist. Use env overrides instead: `HEADLESS=false`, `BROWSER=firefox`, `SLOW_MO=250`, `BASE_URL=...`.
+`pytest-playwright` is intentionally **not** used (ADR-1): `--headed`, `--browser`, `--slowmo` don't exist. Use env overrides instead: `HEADLESS=false`, `BROWSER=firefox`, `SLOW_MO=250`, `BASE_URL=...`, `TRACE=on` (keep the trace of a passing run).
 
 ## Architecture
 

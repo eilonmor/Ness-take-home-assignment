@@ -1,4 +1,4 @@
-"""Cart flow: open each item, pick random available variants, add it to the cart."""
+"""Cart flow: add items with random available variants, then check the cart total against the budget."""
 
 from __future__ import annotations
 
@@ -11,11 +11,14 @@ from playwright.sync_api import Page
 from components.header import Header
 from components.variant_selector import VariantChoice
 from core.config import Settings
-from core.constants import SEED_UPPER_BOUND, AttachmentName, EnvVar, ScreenshotName
-from core.exceptions import VariantSelectionError
+from core.constants import SEED_UPPER_BOUND, AssertMessage, AttachmentName, EnvVar, ScreenshotName, TraceMode
+from core.exceptions import CartBudgetExceededError, VariantSelectionError
 from core.logger import get_logger
+from pages.cart_page import CartLine, CartPage
 from pages.item_page import ItemPage
 from utils.attachments import attach_text
+from utils.price_parser import Price
+from utils.tracing import tracing_group
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,47 @@ class CartItem:
     def __str__(self) -> str:
         variants = ", ".join(map(str, self.variants)) or "no variants"
         return f"{self.price} | {self.title} | {variants}\n   {self.url}"
+
+
+@dataclass(frozen=True)
+class CartCheck:
+    """The cart total next to the budget it is checked against (spec 5.4)."""
+
+    line: str  # CartTotalLine: which order summary row ``total`` was read from
+    total: Price
+    budget_per_item: float
+    items_count: int
+    lines: tuple[CartLine, ...]
+
+    @property
+    def budget(self) -> float:
+        return self.budget_per_item * self.items_count
+
+    @property
+    def within_budget(self) -> bool:
+        # Cents: 3 x 0.1 must not end up above 0.3.
+        return round(self.total.high, 2) <= round(self.budget, 2)
+
+    def failure_message(self) -> str:
+        return AssertMessage.CART_TOTAL_ABOVE_BUDGET.format(
+            line=self.line,
+            total=self.total,
+            budget=self.budget,
+            budget_per_item=self.budget_per_item,
+            items_count=self.items_count,
+            excess=self.total.high - self.budget,
+        )
+
+    def __str__(self) -> str:
+        verdict = "OK" if self.within_budget else "ABOVE BUDGET"
+        lines = [
+            f"Cart {self.line}: {self.total}",
+            f"Budget: {self.budget_per_item:g} per item x {self.items_count} items = {self.budget:,.2f}",
+            f"Result: {verdict}",
+            f"Cart lines ({len(self.lines)}):",
+        ]
+        lines += [f"{index}. {line}" for index, line in enumerate(self.lines, 1)]
+        return "\n".join(lines)
 
 
 class CartService:
@@ -68,6 +112,38 @@ class CartService:
                 cart_count = added[-1].cart_count
         attach_text(_summary(added, self.seed), AttachmentName.CART_ITEMS)
         return added
+
+    def assert_cart_total_not_exceeds(self, budget_per_item: float, items_count: int) -> None:
+        """Spec 5.4. Raises ``CartBudgetExceededError`` (an AssertionError) with actual vs. budget."""
+        check = self.check_cart_total(budget_per_item, items_count)
+        if not check.within_budget:
+            raise CartBudgetExceededError(check.failure_message())
+
+    def check_cart_total(self, budget_per_item: float, items_count: int) -> CartCheck:
+        """Open the cart from the current page and read its total; the comparison is left to the caller.
+
+        Leaves the browser on the cart page, with a full-page screenshot, the
+        check attached to the report, and the steps grouped as "Cart page" in the trace.
+        """
+        if budget_per_item < 0 or items_count < 0:
+            raise ValueError(f"budget_per_item and items_count must not be negative, got {budget_per_item}, {items_count}")
+        line = self.settings.cart.total_line
+        tracing_active = self.settings.artifacts.trace != TraceMode.OFF
+        with (
+            allure.step(f"Check the cart {line} <= {budget_per_item:g} x {items_count}"),
+            tracing_group(self.page.context, "Cart page", tracing_active),
+        ):
+            Header(self.page, self.settings).open_cart()
+            cart = CartPage(self.page, self.settings).wait_until_loaded()
+            check = CartCheck(line, cart.total(line), budget_per_item, items_count, tuple(cart.lines()))
+            cart.take_screenshot(ScreenshotName.CART_PAGE, full_page=True)
+            attach_text(str(check), AttachmentName.CART_CHECK)
+
+        self.log.info("Cart check:\n%s", check)
+        if len(check.lines) != items_count:
+            # Not part of the spec's check, but a cart with other items makes the total meaningless.
+            self.log.warning(AssertMessage.CART_LINES.format(actual=len(check.lines), expected=items_count))
+        return check
 
     def _add_item(self, url: str, number: int, total: int, cart_count_before: int) -> CartItem:
         with allure.step(f"Add item {number}/{total} to the cart: {url}"):

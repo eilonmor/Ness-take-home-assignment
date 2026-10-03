@@ -1,4 +1,4 @@
-"""CartService flow with stubbed pages (no browser needed): retries, tab cleanup, cart count."""
+"""CartService flow with stubbed pages (no browser needed): retries, tab cleanup, cart count, budget check."""
 
 from dataclasses import replace
 
@@ -6,9 +6,11 @@ import pytest
 
 from components.variant_selector import VariantChoice
 from core.config import Settings, load_settings
-from core.exceptions import AddToCartError, VariantSelectionError
+from core.exceptions import AddToCartError, CartBudgetExceededError, VariantSelectionError
+from pages.cart_page import CartLine
 from services import cart_service
-from services.cart_service import CartService
+from services.cart_service import CartCheck, CartService
+from utils.price_parser import Price
 
 
 class FakeTab:
@@ -174,3 +176,138 @@ def test_title_and_price_are_read_before_the_click(settings: Settings, monkeypat
 
     assert item.calls == ["select", "quantity", "title", "price", "add"]
     assert (added[0].title, added[0].price) == ("Tee", "ILS 59.37")
+
+
+# --- assert_cart_total_not_exceeds (spec 5.4) ----------------------------------
+
+
+class FakeContext:
+    def __init__(self) -> None:
+        self.tracing = self
+        self.groups: list[str] = []
+
+    def group(self, name: str) -> None:
+        self.groups.append(name)
+
+    def group_end(self) -> None:
+        self.groups.append("end")
+
+
+class FakeCartTab(FakeSearchTab):
+    def __init__(self) -> None:
+        super().__init__()
+        self.context = FakeContext()
+
+
+class FakeCartHeader:
+    def __init__(self) -> None:
+        self.opened = 0
+
+    def open_cart(self) -> None:
+        self.opened += 1
+
+
+class FakeCartPage:
+    def __init__(self, totals: dict[str, Price], lines: int) -> None:
+        self.totals = totals
+        self._lines = [CartLine(f"Item {n}", "ILS 10.00", 1) for n in range(lines)]
+        self.screenshots: list[tuple[str, bool]] = []
+
+    def wait_until_loaded(self) -> "FakeCartPage":
+        return self
+
+    def total(self, line: str) -> Price:
+        return self.totals[line]
+
+    def lines(self) -> list[CartLine]:
+        return self._lines
+
+    def take_screenshot(self, name: str, full_page: bool = False) -> None:
+        self.screenshots.append((name, full_page))
+
+
+def ils(amount: float) -> Price:
+    return Price(amount, amount, "ILS")
+
+
+def make_cart_service(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, cart: FakeCartPage
+) -> tuple[CartService, FakeCartTab, FakeCartHeader, list[str]]:
+    tab, header, attached = FakeCartTab(), FakeCartHeader(), []
+    monkeypatch.setattr(cart_service, "Header", lambda page, settings: header)
+    monkeypatch.setattr(cart_service, "CartPage", lambda page, settings: cart)
+    monkeypatch.setattr(cart_service, "attach_text", lambda content, name: attached.append(content))
+    return CartService(page=tab, settings=settings), tab, header, attached  # type: ignore[arg-type]
+
+
+def test_total_within_budget_passes_with_evidence(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    cart = FakeCartPage({"items": ils(600.0), "subtotal": ils(700.0)}, lines=3)
+    service, tab, header, attached = make_cart_service(settings, monkeypatch, cart)
+
+    service.assert_cart_total_not_exceeds(220, 3)
+
+    assert header.opened == 1
+    assert cart.screenshots == [("cart_page", True)]
+    assert tab.context.groups == ["Cart page", "end"]
+    assert "Budget: 220 per item x 3 items = 660.00" in attached[0]
+    assert "Result: OK" in attached[0]
+
+
+def test_total_equal_to_budget_passes(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    # 3 x 0.1 is 0.30000000000000004 in floats; the check is in cents.
+    cart = FakeCartPage({"items": ils(0.3)}, lines=3)
+    service, *_ = make_cart_service(settings, monkeypatch, cart)
+
+    service.assert_cart_total_not_exceeds(0.1, 3)
+
+
+def test_total_above_budget_fails_with_actual_vs_budget(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    cart = FakeCartPage({"items": ils(675.5)}, lines=3)
+    service, _, _, attached = make_cart_service(settings, monkeypatch, cart)
+
+    with pytest.raises(CartBudgetExceededError) as error:
+        service.assert_cart_total_not_exceeds(220, 3)
+
+    assert str(error.value) == (
+        "Cart items ILS 675.50 is above the budget 660.00 (220 per item x 3 items), over by 15.50"
+    )
+    assert isinstance(error.value, AssertionError)  # a failed check in pytest, not an error
+    assert "Result: ABOVE BUDGET" in attached[0]
+    assert cart.screenshots, "the cart screenshot is taken before the check fails"
+
+
+def test_total_line_comes_from_the_profile(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Items fit the budget; with shipping (subtotal) they do not.
+    cart = FakeCartPage({"items": ils(600.0), "subtotal": ils(700.0)}, lines=3)
+    subtotal_settings = replace(settings, cart=replace(settings.cart, total_line="subtotal"))
+    service, *_ = make_cart_service(subtotal_settings, monkeypatch, cart)
+
+    with pytest.raises(CartBudgetExceededError, match="^Cart subtotal ILS 700.00"):
+        service.assert_cart_total_not_exceeds(220, 3)
+
+
+def test_no_trace_group_when_tracing_is_off(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    cart = FakeCartPage({"items": ils(1.0)}, lines=1)
+    no_trace = replace(settings, artifacts=replace(settings.artifacts, trace="off"))
+    service, tab, *_ = make_cart_service(no_trace, monkeypatch, cart)
+
+    service.assert_cart_total_not_exceeds(5, 1)
+
+    assert tab.context.groups == []
+
+
+def test_negative_budget_is_rejected(settings: Settings) -> None:
+    service = CartService(page=FakeCartTab(), settings=settings)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="must not be negative"):
+        service.assert_cart_total_not_exceeds(-1, 3)
+
+
+def test_cart_check_report_lists_every_line() -> None:
+    lines = (CartLine("Tee", "US $16.25 (ILS 59.37)", 1), CartLine("Cable", "ILS 12.50", 1))
+    check = CartCheck("items", ils(71.87), 50, 2, lines)
+
+    assert str(check).splitlines()[-2:] == [
+        "1. 1 x US $16.25 (ILS 59.37) | Tee",
+        "2. 1 x ILS 12.50 | Cable",
+    ]
