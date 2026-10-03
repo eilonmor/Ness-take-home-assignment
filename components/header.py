@@ -25,6 +25,8 @@ class Header(BasePage):
         self.sign_in_link = self.identity.locator("a[href*='signin.ebay.']")
         self.ship_to_dialog = self.root.locator(".address-dialog__lightbox")
         self.ship_to_dismiss = self.ship_to_dialog.locator("button.lightbox-dialog__close")
+        self.search_input = self.root.locator("#gh-ac")
+        self.search_button = self.root.locator("#gh-search-btn")
 
     def is_signed_in(self) -> bool:
         self.wait_until_visible(self.identity)
@@ -37,6 +39,18 @@ class Header(BasePage):
     def click_sign_in(self) -> None:
         self.log.info("Opening the sign-in page")
         self.click(self.sign_in_link)
+
+    def search(self, query: str) -> None:
+        """Submit the header search box and wait for the results page.
+
+        Searching from a page eBay already served is the supported way in: a
+        cold deep link to /sch/... is answered with a bot check.
+        """
+        self.dismiss_ship_to_dialog()
+        self.log.info("Searching for %r", query)
+        self.fill(self.search_input, query)
+        with self.expect_navigation(lambda url: "/sch/" in url):
+            self.click(self.search_button)
 
     def dismiss_ship_to_dialog(self) -> None:
         """Close the modal that asks to confirm the shipping postcode; it blocks every click."""

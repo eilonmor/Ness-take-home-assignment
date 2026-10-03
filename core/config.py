@@ -73,6 +73,13 @@ class DataSettings:
 
 
 @dataclass(frozen=True)
+class SearchSettings:
+    # Upper bound for paging in search_items_by_name_under_price: stops a
+    # query with few cheap items from crawling (and being rate-limited).
+    max_pages: int
+
+
+@dataclass(frozen=True)
 class AuthSettings:
     guest: bool
     username: str | None = None
@@ -92,6 +99,7 @@ class Settings:
     timeouts: TimeoutSettings
     artifacts: ArtifactSettings
     data: DataSettings
+    search: SearchSettings
     auth: AuthSettings
 
 
@@ -210,8 +218,16 @@ def _build_settings(env: str, raw: dict[str, Any]) -> Settings:
             screenshot_on_failure=_profile_bool(artifacts["screenshot_on_failure"], "artifacts.screenshot_on_failure"),
         ),
         data=DataSettings(search_cases=_project_path(raw["data"]["search_cases"])),
+        search=_build_search(raw["search"]),
         auth=_build_auth(raw["auth"]),
     )
+
+
+def _build_search(search: dict[str, Any]) -> SearchSettings:
+    max_pages = search["max_pages"]
+    if isinstance(max_pages, bool) or not isinstance(max_pages, int) or max_pages < 1:
+        raise ValueError(f"search.max_pages must be a positive integer, got {max_pages!r}")
+    return SearchSettings(max_pages=max_pages)
 
 
 def _build_auth(auth: dict[str, Any]) -> AuthSettings:

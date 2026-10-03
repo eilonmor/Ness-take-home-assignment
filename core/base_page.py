@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Self
 
@@ -46,6 +48,27 @@ class BasePage:
     def go_back(self) -> None:
         self.log.debug("Navigating back from %s", self.page.url)
         self.page.go_back(wait_until="domcontentloaded")
+
+    @contextmanager
+    def expect_navigation(self, arrived: Callable[[str], bool]) -> Iterator[None]:
+        """Wrap a click that navigates (search, filter, next page); wait for the new page.
+
+            with self.expect_navigation(lambda url: "/sch/" in url):
+                self.click(self.search_button)
+
+        Only a navigation that starts inside the block counts. ``wait_for_url``
+        would return at once when the current URL already matches, e.g. a
+        second search started from a results page.
+
+        A bot-check redirect also ends the wait, so the run fails with a
+        ``BotChallengeError`` instead of a timeout on the expected URL.
+        """
+        with self.page.expect_navigation(
+            url=lambda url: arrived(url) or bot_challenge_reason("", url) is not None,
+            wait_until="domcontentloaded",
+        ):
+            yield
+        self.ensure_not_blocked()
 
     @property
     def url(self) -> str:

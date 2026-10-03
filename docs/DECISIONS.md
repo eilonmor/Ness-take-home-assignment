@@ -145,3 +145,40 @@ The profile is chosen by `pytest --env ci`, else `ENV=ci` (shell or `.env`), els
 - ❌ A trace of a real-login run starts after sign-in: the home page and the sign-in steps are dropped. A failed sign-in is still covered by the failure screenshot and the `LoginError` message.
 - ❌ Real sign-in is implemented but not verified end to end (no test account, and headless always hits the captcha). Only the unknown-account error path was checked by hand.
 - ❌ Guest only: no saved addresses or watchlist. Prices and the cart total are those shown to an anonymous visitor in the detected region.
+
+---
+
+## ADR-7 — Search: UI price filter first, every card checked by XPath, paging with a cap
+
+**Context.** Spec 5.2 asks for the first `limit` items priced ≤ `max_price`, collected with XPath, using the site's price filter when there is one and paging when needed. Probing the live results page (2026-10) showed:
+- Cards are `ul.srp-results > li.s-card[data-listingid]`. The same list also holds carousels, "Popular Filters" and the pager (`li.srp-river-answer--*`), and may have a "Shop on eBay" placeholder and a "Results matching fewer words" divider.
+- A card has one `s-card__attribute-row` per price. A range is three `s-card__price` spans ("ILS 81.50", " to ", "ILS 110.86"). A sale shows a crossed-out "was" price in the same row, with a different class. An auction can show a bid row **and** a Buy It Now row.
+- The price filter box takes whole numbers only, and eBay navigates to `…&_udhi=<max>` a moment *after* the click.
+- Prices are shown in the visitor's currency (ILS from Israel), not the profile's `currency: USD`. The filter works in the displayed currency.
+- A cold `page.goto()` to a `/sch/...` URL is answered with "Pardon Our Interruption"; searching through the header box is not.
+
+**Decision.**
+- Flow in [services/search_service.py](../services/search_service.py): `Header.search(query)` → `SearchResultsPage.apply_max_price()` → read cards → next page, until `limit`, no next page, or `search.max_pages` (profile, default 5).
+- The filter is applied through the sidebar box ([components/price_filter.py](../components/price_filter.py)), rounded **up** to a whole number so no matching item is filtered out. Setting `_udhi` in the URL is only the fallback when the box is missing.
+- The filter only narrows the results. Every card is still checked: `price.high <= max_price`, using the **upper** bound of a range and the **highest** price on the card (the Buy It Now price of an auction). Auction-only cards are skipped (they cannot go in a cart, Stage 5), as are cards without a readable price and URLs already collected.
+- All card fields are read with the XPaths in [pages/search_results_page.py](../pages/search_results_page.py), evaluated in the page in **one** `evaluate_all` call per page.
+- Item URLs are returned without the query string (`https://www.ebay.com/itm/<id>`), which also makes duplicates across pages easy to spot.
+- `max_price` is compared in the currency eBay displays. A mismatch with the profile currency is logged as a warning, not treated as an error.
+- Click-started navigations are wrapped in `BasePage.expect_navigation()`. It waits for the navigation that the click starts, not just for a matching URL (a second search from a results page already matches `/sch/`). A bot-check redirect also ends the wait and raises `BotChallengeError`.
+
+**Alternatives.**
+
+| Option | Why not |
+|---|---|
+| Build the search URL (`/sch/i.html?_nkw=…&_udhi=…`) and `goto` it | Fastest, but a cold deep link gets the bot page. |
+| Trust the filter and take the first `limit` cards | The filter compares the *current bid* of an auction and the *lower* bound of a range, so items above the max get through. |
+| One locator call per field per card | Many round trips per page, each slowed by `slow_mo`, and the DOM can change between them. |
+| Convert prices to the profile currency | Needs live exchange rates; the cart total (Stage 6) is shown in the same displayed currency anyway. |
+| Skip sponsored cards | Sponsored cards are real listings that match the query and price. The new layout hides the "Sponsored" label behind obfuscated markup, so detection would be guesswork. |
+
+**Consequences.**
+- ✅ Every returned item is verified against `max_price` on the page itself, whatever the filter did.
+- ✅ The XPaths and the price logic are covered offline: [tests/unit/test_search_results_page.py](../tests/unit/test_search_results_page.py) runs them in a local headless browser against markup copied from a live page, and [tests/unit/test_price_parser.py](../tests/unit/test_price_parser.py) covers the parser.
+- ❌ The locators target eBay's current `s-card` layout. The older `s-item` layout, which eBay may still serve in some A/B buckets, is not supported. All selectors are constants in one module, so a layout change is a local edit.
+- ❌ `max_price: 220` means 220 in whatever currency the visitor sees. Running from another country changes the meaning of the data rows. This is documented in the README.
+- ❌ Shipping is not part of the price check (the spec compares the item price).
