@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 
 from core.constants import (
     BASE_PROFILE,
+    BROWSER_CHANNELS,
     BROWSERS,
     CART_TOTAL_LINES,
     DEFAULT_ENV,
@@ -36,6 +37,7 @@ from core.constants import (
     TRACE_MODES,
     TRUE_VALUES,
     ArtifactFiles,
+    BrowserName,
     EnvVar,
 )
 
@@ -246,7 +248,7 @@ def _build_settings(env: str, raw: dict[str, Any]) -> Settings:
             viewport_width=int(browser["viewport"]["width"]),
             viewport_height=int(browser["viewport"]["height"]),
             stealth=_profile_bool(browser.get("stealth", False), "browser.stealth"),
-            channel=browser.get("channel") or None,
+            channel=_build_channel(browser.get("channel"), browser["name"]),
         ),
         timeouts=TimeoutSettings(
             default_ms=int(timeouts["default_ms"]),
@@ -263,6 +265,22 @@ def _build_settings(env: str, raw: dict[str, Any]) -> Settings:
         cart=_build_cart(raw["cart"]),
         auth=_build_auth(raw["auth"]),
     )
+
+
+def _build_channel(channel: Any, browser_name: str) -> str | None:
+    """Installed browser to drive: a known Chromium channel, or None for the bundled one."""
+    if channel is None:
+        return None
+    if not isinstance(channel, str):
+        raise ValueError(f"browser.channel must be one of {BROWSER_CHANNELS} or null, got {channel!r}")
+    normalized = channel.strip().lower()
+    if not normalized:
+        return None
+    if normalized not in BROWSER_CHANNELS:
+        raise ValueError(f"browser.channel must be one of {BROWSER_CHANNELS} or null, got {channel!r}")
+    if browser_name != BrowserName.CHROMIUM:
+        raise ValueError(f"browser.channel '{normalized}' needs browser.name chromium, got '{browser_name}'")
+    return normalized
 
 
 def _build_search(search: dict[str, Any]) -> SearchSettings:

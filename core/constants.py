@@ -55,6 +55,12 @@ class CartTotalLine(StrEnum):
 
 BROWSERS = tuple(browser.value for browser in BrowserName)
 TRACE_MODES = tuple(mode.value for mode in TraceMode)
+# Playwright channels for browser.channel (Chromium only); null = the bundled browser.
+BROWSER_CHANNELS = (
+    "chromium",
+    "chrome", "chrome-beta", "chrome-dev", "chrome-canary",
+    "msedge", "msedge-beta", "msedge-dev", "msedge-canary",
+)
 CART_TOTAL_LINES = tuple(line.value for line in CartTotalLine)
 TRUE_VALUES = ("1", "true", "yes", "on")
 FALSE_VALUES = ("0", "false", "no", "off")
